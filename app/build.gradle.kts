@@ -60,6 +60,10 @@ android {
         jvmTarget = "17"
     }
 
+    tasks.withType<JavaCompile> {
+        options.compilerArgs.addAll(listOf("-Xlint:-deprecation"))
+    }
+
     buildFeatures {
         compose      = true
         buildConfig  = true   // untuk akses BuildConfig.GEMINI_API_KEY
