@@ -1,169 +1,87 @@
+// app/src/main/java/com/sndiy/chatfin/core/ui/navigation/NavGraph.kt
+// ⚠️ TIMPA seluruh isi NavGraph.kt yang lama dengan file ini
+
 package com.sndiy.chatfin.core.ui.navigation
 
 import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Construction
+import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
+import com.sndiy.chatfin.feature.finance.account.ui.AccountFormScreen
+import com.sndiy.chatfin.feature.finance.account.ui.AccountListScreen
 
-// ─────────────────────────────────────────────────────────────────────────────
-// NavRoutes — semua route dalam satu tempat, hindari string literal tersebar
-// ─────────────────────────────────────────────────────────────────────────────
-sealed class Screen(val route: String) {
-
-    // ── Bottom Nav (5 tab utama) ──────────────────────────────────────────────
-    data object Chat            : Screen("chat")
-    data object Dashboard       : Screen("dashboard")
-    data object AddTransaction  : Screen("add_transaction")
-    data object Analytics       : Screen("analytics")
-    data object Settings        : Screen("settings")
-
-    // ── Chat Feature ─────────────────────────────────────────────────────────
-    data object CharacterList   : Screen("character_list")
-    data object CharacterBuilder: Screen("character_builder/{characterId}") {
-        fun createRoute(characterId: String = "new") =
-            "character_builder/$characterId"
+// ── Placeholder untuk screen yang belum diimplementasi ───────────────────────
+@Composable
+fun PlaceholderScreen(name: String) {
+    Column(
+        modifier            = Modifier.fillMaxSize(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            imageVector        = Icons.Default.Construction,
+            contentDescription = null,
+            modifier           = Modifier.size(64.dp),
+            tint               = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+        Text(text = name, style = MaterialTheme.typography.titleMedium)
+        Text(
+            text  = "Akan hadir di fase berikutnya",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
-
-    // ── Finance: Account ─────────────────────────────────────────────────────
-    data object AccountList     : Screen("account_list")
-    data object AccountForm     : Screen("account_form/{accountId}") {
-        fun createRoute(accountId: String = "new") =
-            "account_form/$accountId"
-    }
-
-    // ── Finance: Transaction ──────────────────────────────────────────────────
-    data object TransactionList : Screen("transaction_list")
-    data object TransactionForm : Screen("transaction_form/{transactionId}") {
-        fun createRoute(transactionId: String = "new") =
-            "transaction_form/$transactionId"
-    }
-    data object TransactionDetail: Screen("transaction_detail/{transactionId}") {
-        fun createRoute(transactionId: String) =
-            "transaction_detail/$transactionId"
-    }
-
-    // ── Finance: Wallet ────────────────────────────────────────────────────────
-    data object WalletList      : Screen("wallet_list")
-    data object WalletForm      : Screen("wallet_form/{walletId}") {
-        fun createRoute(walletId: String = "new") =
-            "wallet_form/$walletId"
-    }
-
-    // ── Finance: Category ─────────────────────────────────────────────────────
-    data object CategoryList    : Screen("category_list")
-    data object CategoryForm    : Screen("category_form/{categoryId}") {
-        fun createRoute(categoryId: String = "new") =
-            "category_form/$categoryId"
-    }
-
-    // ── Finance: Budget ────────────────────────────────────────────────────────
-    data object BudgetList      : Screen("budget_list")
-    data object BudgetForm      : Screen("budget_form/{budgetId}") {
-        fun createRoute(budgetId: String = "new") =
-            "budget_form/$budgetId"
-    }
-
-    // ── Finance: Savings Goal ──────────────────────────────────────────────────
-    data object SavingsGoalList : Screen("savings_goal_list")
-    data object SavingsGoalForm : Screen("savings_goal_form/{goalId}") {
-        fun createRoute(goalId: String = "new") =
-            "savings_goal_form/$goalId"
-    }
-
-    // ── Overview All Accounts ──────────────────────────────────────────────────
-    data object OverviewAllAccounts : Screen("overview_all_accounts")
-
-    // ── Settings Sub-screens ───────────────────────────────────────────────────
-    data object SettingsApiKey      : Screen("settings_api_key")
-    data object SettingsTheme       : Screen("settings_theme")
-    data object SettingsBackup      : Screen("settings_backup")
-    data object SettingsSecurity    : Screen("settings_security")
-    data object SettingsAbout       : Screen("settings_about")
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Bottom Navigation Items
-// ─────────────────────────────────────────────────────────────────────────────
-data class BottomNavItem(
-    val screen: Screen,
-    val labelRes: Int,
-    val iconSelected: androidx.compose.ui.graphics.vector.ImageVector,
-    val iconDefault: androidx.compose.ui.graphics.vector.ImageVector,
-    val isCenter: Boolean = false   // tombol tengah ➕ menonjol
-)
-
-// ─────────────────────────────────────────────────────────────────────────────
-// NavGraph — graph navigasi utama aplikasi
-// ─────────────────────────────────────────────────────────────────────────────
+// ── Navigation Graph Utama ────────────────────────────────────────────────────
 @Composable
 fun ChatFinNavGraph(navController: NavHostController) {
     NavHost(
-        navController    = navController,
-        startDestination = Screen.Dashboard.route,
-        enterTransition  = {
-            slideInHorizontally(
-                initialOffsetX = { fullWidth -> fullWidth },
-                animationSpec  = tween(300)
-            ) + fadeIn(animationSpec = tween(300))
+        navController      = navController,
+        startDestination   = Screen.Dashboard.route,
+        enterTransition    = {
+            slideInHorizontally(initialOffsetX = { it }, animationSpec = tween(300)) +
+                    fadeIn(animationSpec = tween(300))
         },
-        exitTransition   = {
-            slideOutHorizontally(
-                targetOffsetX = { fullWidth -> -fullWidth / 3 },
-                animationSpec = tween(300)
-            ) + fadeOut(animationSpec = tween(300))
+        exitTransition     = {
+            slideOutHorizontally(targetOffsetX = { -it / 3 }, animationSpec = tween(300)) +
+                    fadeOut(animationSpec = tween(300))
         },
         popEnterTransition = {
-            slideInHorizontally(
-                initialOffsetX = { fullWidth -> -fullWidth / 3 },
-                animationSpec  = tween(300)
-            ) + fadeIn(animationSpec = tween(300))
+            slideInHorizontally(initialOffsetX = { -it / 3 }, animationSpec = tween(300)) +
+                    fadeIn(animationSpec = tween(300))
         },
-        popExitTransition = {
-            slideOutHorizontally(
-                targetOffsetX = { fullWidth -> fullWidth },
-                animationSpec = tween(300)
-            ) + fadeOut(animationSpec = tween(300))
+        popExitTransition  = {
+            slideOutHorizontally(targetOffsetX = { it }, animationSpec = tween(300)) +
+                    fadeOut(animationSpec = tween(300))
         }
     ) {
-        // ── Bottom Nav Screens ─────────────────────────────────────────────
-        composable(Screen.Chat.route) {
-            // ChatScreen(navController)
-        }
-        composable(Screen.Dashboard.route) {
-            // DashboardScreen(navController)
-        }
-        composable(Screen.AddTransaction.route) {
-            // TransactionFormScreen(navController)
-        }
-        composable(Screen.Analytics.route) {
-            // AnalyticsScreen(navController)
-        }
-        composable(Screen.Settings.route) {
-            // SettingsScreen(navController)
-        }
+        // ── Bottom Nav (placeholder) ───────────────────────────────────────────
+        composable(Screen.Chat.route)            { PlaceholderScreen("Chat") }
+        composable(Screen.Dashboard.route)       { PlaceholderScreen("Dashboard") }
+        composable(Screen.AddTransaction.route)  { PlaceholderScreen("Tambah Transaksi") }
+        composable(Screen.Analytics.route)       { PlaceholderScreen("Analitik") }
+        composable(Screen.Settings.route)        { PlaceholderScreen("Setelan") }
 
-        // ── Character ──────────────────────────────────────────────────────
-        composable(Screen.CharacterList.route) {
-            // CharacterListScreen(navController)
-        }
-        composable(
-            route     = Screen.CharacterBuilder.route,
-            arguments = listOf(navArgument("characterId") {
-                type         = NavType.StringType
-                defaultValue = "new"
-            })
-        ) { backStackEntry ->
-            val characterId = backStackEntry.arguments?.getString("characterId") ?: "new"
-            // CharacterBuilderScreen(navController, characterId)
-        }
-
-        // ── Account ────────────────────────────────────────────────────────
+        // ── Account ────────────────────────────────────────────────────────────
         composable(Screen.AccountList.route) {
-            // AccountListScreen(navController)
+            AccountListScreen(
+                onNavigateBack          = { navController.popBackStack() },
+                onNavigateToAddAccount  = { navController.navigate(Screen.AccountForm.createRoute()) },
+                onNavigateToEditAccount = { id -> navController.navigate(Screen.AccountForm.createRoute(id)) }
+            )
         }
         composable(
             route     = Screen.AccountForm.route,
@@ -171,77 +89,79 @@ fun ChatFinNavGraph(navController: NavHostController) {
                 type         = NavType.StringType
                 defaultValue = "new"
             })
-        ) { backStackEntry ->
-            val accountId = backStackEntry.arguments?.getString("accountId") ?: "new"
-            // AccountFormScreen(navController, accountId)
+        ) { back ->
+            AccountFormScreen(
+                accountId      = back.arguments?.getString("accountId") ?: "new",
+                onNavigateBack = { navController.popBackStack() }
+            )
         }
 
-        // ── Transaction ────────────────────────────────────────────────────
-        composable(Screen.TransactionList.route) {
-            // TransactionListScreen(navController)
-        }
+        // ── Character ──────────────────────────────────────────────────────────
+        composable(Screen.CharacterList.route) { PlaceholderScreen("Daftar Karakter") }
+        composable(
+            route     = Screen.CharacterBuilder.route,
+            arguments = listOf(navArgument("characterId") {
+                type = NavType.StringType; defaultValue = "new"
+            })
+        ) { PlaceholderScreen("Character Builder") }
+
+        // ── Transaction ────────────────────────────────────────────────────────
+        composable(Screen.TransactionList.route) { PlaceholderScreen("Transaksi") }
         composable(
             route     = Screen.TransactionForm.route,
             arguments = listOf(navArgument("transactionId") {
-                type         = NavType.StringType
-                defaultValue = "new"
+                type = NavType.StringType; defaultValue = "new"
             })
-        ) { backStackEntry ->
-            val transactionId = backStackEntry.arguments?.getString("transactionId") ?: "new"
-            // TransactionFormScreen(navController, transactionId)
-        }
+        ) { PlaceholderScreen("Form Transaksi") }
         composable(
             route     = Screen.TransactionDetail.route,
             arguments = listOf(navArgument("transactionId") {
                 type = NavType.StringType
             })
-        ) { backStackEntry ->
-            val transactionId = backStackEntry.arguments?.getString("transactionId") ?: ""
-            // TransactionDetailScreen(navController, transactionId)
-        }
+        ) { PlaceholderScreen("Detail Transaksi") }
 
-        // ── Wallet ─────────────────────────────────────────────────────────
-        composable(Screen.WalletList.route) { }
-        composable(Screen.WalletForm.route,
+        // ── Wallet ─────────────────────────────────────────────────────────────
+        composable(Screen.WalletList.route) { PlaceholderScreen("Dompet") }
+        composable(
+            route     = Screen.WalletForm.route,
             arguments = listOf(navArgument("walletId") {
                 type = NavType.StringType; defaultValue = "new"
             })
-        ) { }
+        ) { PlaceholderScreen("Form Dompet") }
 
-        // ── Category ───────────────────────────────────────────────────────
-        composable(Screen.CategoryList.route) { }
-        composable(Screen.CategoryForm.route,
+        // ── Category ───────────────────────────────────────────────────────────
+        composable(Screen.CategoryList.route) { PlaceholderScreen("Kategori") }
+        composable(
+            route     = Screen.CategoryForm.route,
             arguments = listOf(navArgument("categoryId") {
                 type = NavType.StringType; defaultValue = "new"
             })
-        ) { }
+        ) { PlaceholderScreen("Form Kategori") }
 
-        // ── Budget ─────────────────────────────────────────────────────────
-        composable(Screen.BudgetList.route) { }
-        composable(Screen.BudgetForm.route,
+        // ── Budget ─────────────────────────────────────────────────────────────
+        composable(Screen.BudgetList.route) { PlaceholderScreen("Budget") }
+        composable(
+            route     = Screen.BudgetForm.route,
             arguments = listOf(navArgument("budgetId") {
                 type = NavType.StringType; defaultValue = "new"
             })
-        ) { }
+        ) { PlaceholderScreen("Form Budget") }
 
-        // ── Savings Goal ───────────────────────────────────────────────────
-        composable(Screen.SavingsGoalList.route) { }
-        composable(Screen.SavingsGoalForm.route,
+        // ── Savings Goal ───────────────────────────────────────────────────────
+        composable(Screen.SavingsGoalList.route) { PlaceholderScreen("Tabungan") }
+        composable(
+            route     = Screen.SavingsGoalForm.route,
             arguments = listOf(navArgument("goalId") {
                 type = NavType.StringType; defaultValue = "new"
             })
-        ) { }
+        ) { PlaceholderScreen("Form Tabungan") }
 
-        // ── Overview All Accounts ──────────────────────────────────────────
-        composable(Screen.OverviewAllAccounts.route) {
-            // OverviewAllAccountsScreen(navController)
-        }
-
-        // ── Settings Sub-screens ───────────────────────────────────────────
-        composable(Screen.SettingsApiKey.route) { }
-        composable(Screen.SettingsTheme.route) { }
-        composable(Screen.SettingsBackup.route) { }
-        composable(Screen.SettingsSecurity.route) { }
-        composable(Screen.SettingsAbout.route) { }
+        // ── Overview & Settings ────────────────────────────────────────────────
+        composable(Screen.OverviewAllAccounts.route) { PlaceholderScreen("Semua Akun") }
+        composable(Screen.SettingsApiKey.route)      { PlaceholderScreen("API Key") }
+        composable(Screen.SettingsTheme.route)       { PlaceholderScreen("Tema") }
+        composable(Screen.SettingsBackup.route)      { PlaceholderScreen("Backup") }
+        composable(Screen.SettingsSecurity.route)    { PlaceholderScreen("Keamanan") }
+        composable(Screen.SettingsAbout.route)       { PlaceholderScreen("Tentang") }
     }
 }
