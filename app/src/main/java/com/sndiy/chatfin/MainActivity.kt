@@ -1,5 +1,5 @@
 // app/src/main/java/com/sndiy/chatfin/MainActivity.kt
-// ⚠️ TIMPA seluruh isi MainActivity.kt yang lama dengan file ini
+// ⚠️ TIMPA seluruh isi MainActivity.kt yang lama
 
 package com.sndiy.chatfin
 
@@ -14,7 +14,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -24,6 +23,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
@@ -49,7 +49,17 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-// Nama diubah jadi ChatFinAppContent agar tidak bentrok dengan class ChatFinApp
+// ── Screen yang TIDAK menampilkan bottom nav ───────────────────────────────────
+private val fullScreenRoutes = setOf(
+    Screen.AccountForm.route,
+    Screen.TransactionForm.route,
+    Screen.CharacterBuilder.route,
+    Screen.WalletForm.route,
+    Screen.CategoryForm.route,
+    Screen.BudgetForm.route,
+    Screen.SavingsGoalForm.route
+)
+
 @Composable
 fun ChatFinAppContent() {
     val navController    = rememberNavController()
@@ -58,16 +68,27 @@ fun ChatFinAppContent() {
 
     var showAccountSwitcher by remember { mutableStateOf(false) }
 
+    val navBackStackEntry  by navController.currentBackStackEntryAsState()
+    val currentRoute       = navBackStackEntry?.destination?.route
+    val showBottomBar      = fullScreenRoutes.none { currentRoute?.startsWith(it.substringBefore("{")) == true }
+
     Scaffold(
         modifier  = Modifier.fillMaxSize(),
         topBar    = {
-            ChatFinTopBar(
-                activeAccountName  = uiState.activeAccount?.name ?: "ChatFin",
-                activeAccountColor = uiState.activeAccount?.colorHex ?: "#0061A4",
-                onAccountClick     = { showAccountSwitcher = true }
-            )
+            // Sembunyikan TopBar saat di halaman full-screen
+            if (showBottomBar) {
+                ChatFinTopBar(
+                    activeAccountName  = uiState.activeAccount?.name ?: "ChatFin",
+                    activeAccountColor = uiState.activeAccount?.colorHex ?: "#0061A4",
+                    onAccountClick     = { showAccountSwitcher = true }
+                )
+            }
         },
-        bottomBar = { ChatFinBottomBar(navController) },
+        bottomBar = {
+            if (showBottomBar) {
+                ChatFinBottomBar(navController)
+            }
+        },
         contentWindowInsets = WindowInsets.navigationBars
     ) { paddingValues ->
         Box(
@@ -95,7 +116,7 @@ fun ChatFinAppContent() {
     }
 }
 
-// ── Top App Bar ───────────────────────────────────────────────────────────────
+// ── Top App Bar ────────────────────────────────────────────────────────────────
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatFinTopBar(
@@ -110,8 +131,8 @@ fun ChatFinTopBar(
     TopAppBar(
         title = {
             Row(
-                modifier          = Modifier.clickable(onClick = onAccountClick),
-                verticalAlignment = Alignment.CenterVertically,
+                modifier              = Modifier.clickable(onClick = onAccountClick),
+                verticalAlignment     = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Box(
@@ -151,21 +172,19 @@ fun ChatFinTopBar(
     )
 }
 
-// ── Bottom Navigation Bar ─────────────────────────────────────────────────────
+// ── Bottom Nav — 4 tab, tanpa Tambah ──────────────────────────────────────────
 private data class NavItem(
     val screen: Screen,
     val label: String,
     val selectedIcon: ImageVector,
-    val defaultIcon: ImageVector,
-    val isCenter: Boolean = false
+    val defaultIcon: ImageVector
 )
 
 private val bottomNavItems = listOf(
-    NavItem(Screen.Chat,           "Chat",     Icons.Filled.Chat,      Icons.Outlined.Chat),
-    NavItem(Screen.Dashboard,      "Dashboard",Icons.Filled.Dashboard, Icons.Outlined.Dashboard),
-    NavItem(Screen.AddTransaction, "Tambah",   Icons.Filled.Add,       Icons.Filled.Add, isCenter = true),
-    NavItem(Screen.Analytics,      "Analitik", Icons.Filled.BarChart,  Icons.Outlined.BarChart),
-    NavItem(Screen.Settings,       "Setelan",  Icons.Filled.Settings,  Icons.Outlined.Settings),
+    NavItem(Screen.Chat,      "Chat",      Icons.Filled.Chat,      Icons.Outlined.Chat),
+    NavItem(Screen.Dashboard, "Dashboard", Icons.Filled.Dashboard, Icons.Outlined.Dashboard),
+    NavItem(Screen.Analytics, "Analitik",  Icons.Filled.BarChart,  Icons.Outlined.BarChart),
+    NavItem(Screen.Settings,  "Setelan",   Icons.Filled.Settings,  Icons.Outlined.Settings),
 )
 
 @Composable
@@ -175,38 +194,32 @@ fun ChatFinBottomBar(navController: NavController) {
 
     NavigationBar(tonalElevation = 3.dp) {
         bottomNavItems.forEach { item ->
-            if (item.isCenter) {
-                NavigationBarItem(
-                    selected = false,
-                    onClick  = { navController.navigate(item.screen.route) { launchSingleTop = true } },
-                    icon = {
-                        FloatingActionButton(
-                            onClick        = { navController.navigate(item.screen.route) { launchSingleTop = true } },
-                            modifier       = Modifier.size(48.dp),
-                            containerColor = MaterialTheme.colorScheme.primary,
-                            contentColor   = MaterialTheme.colorScheme.onPrimary,
-                            elevation      = FloatingActionButtonDefaults.elevation(4.dp)
-                        ) {
-                            Icon(item.selectedIcon, contentDescription = item.label)
+            val isSelected = currentRoute == item.screen.route
+            NavigationBarItem(
+                selected = isSelected,
+                onClick  = {
+                    navController.navigate(item.screen.route) {
+                        popUpTo(navController.graph.startDestinationId) {
+                            saveState = true
                         }
-                    },
-                    label = { Text(item.label, style = MaterialTheme.typography.labelSmall) }
-                )
-            } else {
-                val isSelected = currentRoute == item.screen.route
-                NavigationBarItem(
-                    selected = isSelected,
-                    onClick  = {
-                        navController.navigate(item.screen.route) {
-                            popUpTo(navController.graph.startDestinationId) { saveState = true }
-                            launchSingleTop = true
-                            restoreState    = true
-                        }
-                    },
-                    icon  = { Icon(if (isSelected) item.selectedIcon else item.defaultIcon, item.label) },
-                    label = { Text(item.label, style = MaterialTheme.typography.labelSmall) }
-                )
-            }
+                        launchSingleTop = true
+                        restoreState    = true
+                    }
+                },
+                icon = {
+                    Icon(
+                        imageVector        = if (isSelected) item.selectedIcon else item.defaultIcon,
+                        contentDescription = item.label
+                    )
+                },
+                label = {
+                    Text(
+                        text     = item.label,
+                        style    = MaterialTheme.typography.labelSmall,
+                        fontSize = 10.sp
+                    )
+                }
+            )
         }
     }
 }
