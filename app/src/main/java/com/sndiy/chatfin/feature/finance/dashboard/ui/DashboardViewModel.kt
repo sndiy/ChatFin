@@ -22,7 +22,7 @@ data class TransactionDisplay(
     val categoryName: String,
     val walletName: String,
     val date: String,
-    val note: String?
+    val note: String?   // ini yang jadi judul
 )
 
 data class DashboardUiState(

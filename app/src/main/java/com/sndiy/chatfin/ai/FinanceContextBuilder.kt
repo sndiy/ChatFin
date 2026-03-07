@@ -37,7 +37,7 @@ class FinanceContextBuilder @Inject constructor() {
             if (wallets.isNotEmpty()) {
                 appendLine("Dompet yang dimiliki:")
                 wallets.forEach { w ->
-                    appendLine("  - ${w.name} (${w.type}): Rp ${fmt.format(w.balance)}")
+                    appendLine("  - ${w.name}: Rp ${fmt.format(w.balance)}")  // hapus (${w.type})
                 }
             }
 

@@ -17,6 +17,17 @@ class GeminiClient @Inject constructor(
         private const val MODEL_FALLBACK = "gemini-2.5-flash-lite"
     }
 
+    // Track model aktif saat ini — bisa di-rotate dari luar
+    private var currentModelIndex = 0
+    private val models = listOf(MODEL_PRIMARY, MODEL_FALLBACK)
+
+    val currentModelName get() = models[currentModelIndex]
+
+    fun rotateModel() {
+        currentModelIndex = (currentModelIndex + 1) % models.size
+        android.util.Log.d("GeminiClient", "Rotate ke model: ${models[currentModelIndex]}")
+    }
+
     fun resolveApiKey(): String {
         val stored = secureStorage.geminiApiKey
         if (!stored.isNullOrBlank()) return stored
@@ -37,7 +48,7 @@ class GeminiClient @Inject constructor(
         )
     }
 
-    private fun isQuotaError(e: Exception): Boolean {
+    fun isQuotaError(e: Exception): Boolean {
         val msg = e.message ?: return false
         return msg.contains("RESOURCE_EXHAUSTED") ||
                 msg.contains("quota", ignoreCase = true) ||
@@ -45,44 +56,26 @@ class GeminiClient @Inject constructor(
                 msg.contains("429")
     }
 
+    // Kirim dengan model yang sedang aktif — tidak auto-fallback lagi
     suspend fun sendMessage(
         userMessage: String,
         history: List<Pair<String, String>>,
         systemPrompt: String
     ): String {
+        val modelName = models[currentModelIndex]
+        android.util.Log.d("GeminiClient", "Kirim dengan model: $modelName")
+
         val builtHistory = history.map { (role, text) ->
             content(role = role) { text(text) }
         }
 
-        // Coba model primary dulu
-        try {
-            android.util.Log.d("GeminiClient", "Mencoba $MODEL_PRIMARY")
-            val model    = buildModel(MODEL_PRIMARY, systemPrompt)
-            val chat     = model.startChat(history = builtHistory)
-            val response = chat.sendMessage(userMessage)
-            return response.text ?: ""
-        } catch (e: Exception) {
-            if (!isQuotaError(e)) throw e
-            android.util.Log.w("GeminiClient", "$MODEL_PRIMARY quota habis, fallback ke $MODEL_FALLBACK")
-        }
-
-        // Fallback ke model lite
-        try {
-            android.util.Log.d("GeminiClient", "Mencoba $MODEL_FALLBACK")
-            val model    = buildModel(MODEL_FALLBACK, systemPrompt)
-            val chat     = model.startChat(history = builtHistory)
-            val response = chat.sendMessage(userMessage)
-            return response.text ?: ""
-        } catch (e: Exception) {
-            if (!isQuotaError(e)) throw e
-            android.util.Log.e("GeminiClient", "$MODEL_FALLBACK juga quota habis")
-        }
-
-        // Kedua model limit
-        throw QuotaExhaustedException()
+        val model    = buildModel(modelName, systemPrompt)
+        val chat     = model.startChat(history = builtHistory)
+        val response = chat.sendMessage(userMessage)
+        return response.text ?: ""
     }
 }
 
-class QuotaExhaustedException : Exception(
-    "Hmph. Sepertinya aku sedang terlalu sibuk sekarang. Coba lagi nanti ya."
+class QuotaExhaustedException(modelName: String = "") : Exception(
+    "Model $modelName sedang limit."
 )

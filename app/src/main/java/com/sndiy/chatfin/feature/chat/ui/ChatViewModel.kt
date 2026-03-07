@@ -9,6 +9,8 @@ import com.sndiy.chatfin.feature.finance.transaction.data.repository.CategoryRep
 import com.sndiy.chatfin.feature.finance.transaction.data.repository.TransactionRepository
 import com.sndiy.chatfin.feature.finance.transaction.data.repository.WalletRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.time.LocalDate
@@ -25,11 +27,18 @@ data class UiMessage(
     val isError: Boolean    = false
 )
 
+enum class ConnectionStatus {
+    CONNECTED, NO_INTERNET, QUOTA_LIMIT, BOT_MODE
+}
+
 data class ChatUiState(
     val messages: List<UiMessage>               = emptyList(),
     val inputText: String                       = "",
     val isTyping: Boolean                       = false,
     val isBotMode: Boolean                      = false,
+    val connectionStatus: ConnectionStatus      = ConnectionStatus.CONNECTED,
+    val retryCountdown: Int                     = 0,
+    val activeModelName: String                 = "gemini-2.5-flash",
     val activeAccount: FinanceAccountEntity?    = null,
     val wallets: List<WalletEntity>             = emptyList(),
     val expenseCategories: List<CategoryEntity> = emptyList(),
@@ -56,15 +65,23 @@ class ChatViewModel @Inject constructor(
     private val transactionRepo: TransactionRepository,
     private val systemPromptBuilder: SystemPromptBuilder,
     private val contextBuilder: FinanceContextBuilder,
-    private val botHandler: BotModeHandler
+    private val botHandler: BotModeHandler,
+    private val geminiClient: GeminiClient
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ChatUiState())
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
 
-    private val chatHistory  = mutableListOf<Pair<String, String>>()
-    private var systemPrompt = ""
+    private val chatHistory      = mutableListOf<Pair<String, String>>()
+    private var systemPrompt     = ""
     private var botStep: BotStep = BotStep.Idle
+    private var generationJob: Job? = null
+    private var retryJob: Job?      = null
+    private var currentLoadingId: String? = null
+
+    // Simpan pesan terakhir user untuk retry
+    private var lastUserMessage: String = ""
+    private var lastHistorySnapshot: List<Pair<String, String>> = emptyList()
 
     init { observeActiveAccount() }
 
@@ -81,7 +98,6 @@ class ChatViewModel @Inject constructor(
         viewModelScope.launch {
             val now   = LocalDate.now()
             val start = now.withDayOfMonth(1)
-
             combine(
                 walletRepo.getWalletsByAccount(accountId),
                 categoryRepo.getCategoriesByAccountAndType(accountId, "EXPENSE"),
@@ -127,6 +143,45 @@ class ChatViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(inputText = text)
     }
 
+    // ── Stop generation ───────────────────────────────────────────────────────
+    fun stopGeneration() {
+        generationJob?.cancel()
+        generationJob    = null
+        currentLoadingId?.let { removeMessage(it) }
+        currentLoadingId = null
+        if (chatHistory.lastOrNull()?.first == "user") chatHistory.removeLastOrNull()
+        _uiState.value = _uiState.value.copy(isTyping = false)
+    }
+
+    // ── Retry AI — countdown HANYA setelah tombol ditekan ────────────────────
+    fun retryAi() {
+        if (_uiState.value.retryCountdown > 0) return
+
+        // Mulai countdown dulu baru retry
+        startRetryCountdown(10)
+
+        _uiState.value = _uiState.value.copy(
+            connectionStatus = ConnectionStatus.CONNECTED,
+            isBotMode        = false
+        )
+
+        // Retry dengan pesan terakhir
+        if (lastUserMessage.isNotBlank()) {
+            executeAiRequest(lastUserMessage, lastHistorySnapshot)
+        }
+    }
+
+    private fun startRetryCountdown(seconds: Int) {
+        retryJob?.cancel()
+        retryJob = viewModelScope.launch {
+            for (i in seconds downTo 1) {
+                _uiState.value = _uiState.value.copy(retryCountdown = i)
+                delay(1000)
+            }
+            _uiState.value = _uiState.value.copy(retryCountdown = 0)
+        }
+    }
+
     // ── Kirim pesan ───────────────────────────────────────────────────────────
     fun sendMessage() {
         val text = _uiState.value.inputText.trim()
@@ -135,110 +190,133 @@ class ChatViewModel @Inject constructor(
         addMessage(UiMessage(role = "user", text = text))
         _uiState.value = _uiState.value.copy(inputText = "")
 
-        // Bot mode aktif atau input adalah perintah bot
-        if (_uiState.value.isBotMode || botStep !is BotStep.Idle || botHandler.isBotCommand(text)) {
+        if (_uiState.value.isBotMode || botStep !is BotStep.Idle) {
             handleBotMode(text)
             return
         }
 
-        // Mode AI normal
         val historySnapshot = chatHistory.toList()
         chatHistory.add("user" to text)
-        _uiState.value = _uiState.value.copy(isTyping = true)
+
+        // Simpan untuk keperluan retry
+        lastUserMessage      = text
+        lastHistorySnapshot  = historySnapshot
+
+        executeAiRequest(text, historySnapshot)
+    }
+
+    private fun executeAiRequest(text: String, historySnapshot: List<Pair<String, String>>) {
+        _uiState.value = _uiState.value.copy(
+            isTyping        = true,
+            activeModelName = geminiClient.currentModelName
+        )
 
         val loadingId = UUID.randomUUID().toString()
+        currentLoadingId = loadingId
         addMessage(UiMessage(id = loadingId, role = "model", text = "", isLoading = true))
 
-        viewModelScope.launch {
+        generationJob = viewModelScope.launch {
             val result = geminiRepo.sendMessage(
                 userMessage  = text,
                 chatHistory  = historySnapshot,
                 systemPrompt = systemPrompt
             )
+            currentLoadingId = null
             removeMessage(loadingId)
             _uiState.value = _uiState.value.copy(isTyping = false)
 
             result.fold(
                 onSuccess = { parsed ->
+                    _uiState.value = _uiState.value.copy(
+                        connectionStatus = ConnectionStatus.CONNECTED,
+                        activeModelName  = geminiClient.currentModelName
+                    )
                     addMessage(UiMessage(role = "model", text = parsed.text, option = parsed.option))
                     chatHistory.add("model" to parsed.text)
-                    if (parsed.option is ChatOption.TransactionConfirm) {
-                        preparePendingTransaction(parsed.option)
-                    }
+                    if (parsed.option is ChatOption.TransactionConfirm) preparePendingTransaction(parsed.option)
                 },
                 onFailure = { error ->
-                    val isQuota = error is QuotaExhaustedException
-                    if (isQuota) {
-                        // Masuk bot mode, sambut user
-                        _uiState.value = _uiState.value.copy(isBotMode = true)
-                        addMessage(UiMessage(
-                            role = "model",
-                            text = "⚠️ AI sedang tidak tersedia karena batas kuota.\n\n" +
-                                    "Aku beralih ke *Mode Bot*. Ketik *help* untuk melihat perintah yang tersedia."
-                        ))
-                    } else {
-                        addMessage(UiMessage(
-                            role    = "model",
-                            text    = error.message ?: "Terjadi kesalahan",
-                            isError = true
-                        ))
+                    val isNoInternet = error.message?.contains("internet", ignoreCase = true) == true ||
+                            error.message?.contains("Unable to resolve", ignoreCase = true) == true ||
+                            error.message?.contains("network", ignoreCase = true) == true
+                    val isAllLimit   = error is QuotaExhaustedException &&
+                            error.message?.contains("semua") == true
+                    val isOneLimit   = error is QuotaExhaustedException && !isAllLimit
+
+                    when {
+                        isNoInternet -> {
+                            _uiState.value = _uiState.value.copy(connectionStatus = ConnectionStatus.NO_INTERNET)
+                            // Tidak ada countdown — langsung tampilkan tombol coba lagi
+                            addMessage(UiMessage(role = "model", text = "Koneksi internetmu terputus.", isError = true))
+                        }
+                        isOneLimit -> {
+                            android.util.Log.d("ChatVM", "Model limit, silent retry dengan ${geminiClient.currentModelName}")
+                            _uiState.value = _uiState.value.copy(
+                                activeModelName = geminiClient.currentModelName,
+                                isTyping        = false
+                            )
+                            executeAiRequest(lastUserMessage, lastHistorySnapshot)
+                        }
+                        isAllLimit -> {
+                            // Semua model limit → tampilkan banner, tidak ada countdown dulu
+                            _uiState.value = _uiState.value.copy(connectionStatus = ConnectionStatus.QUOTA_LIMIT)
+                            addMessage(UiMessage(role = "model", text = "Semua model AI sedang limit.", isError = true))
+                        }
+                        else -> {
+                            addMessage(UiMessage(role = "model", text = error.message ?: "Terjadi kesalahan", isError = true))
+                        }
                     }
                 }
             )
         }
     }
 
-    // ── Bot mode handler ──────────────────────────────────────────────────────
+    fun switchToBotMode() {
+        _uiState.value = _uiState.value.copy(isBotMode = true, connectionStatus = ConnectionStatus.BOT_MODE)
+        addMessage(UiMessage(role = "model", text = "Mode Bot aktif. Ketik *help* untuk melihat perintah yang tersedia."))
+    }
+
+    private fun removeLastUserMessage() {
+        val msgs = _uiState.value.messages.toMutableList()
+        val idx  = msgs.indexOfLast { it.role == "user" }
+        if (idx >= 0) msgs.removeAt(idx)
+        _uiState.value = _uiState.value.copy(messages = msgs)
+    }
+
+    // ── Bot mode ──────────────────────────────────────────────────────────────
     private fun handleBotMode(input: String) {
         val state        = _uiState.value
         val totalBalance = state.wallets.sumOf { it.balance }
-
-        val result = botHandler.handle(
-            input              = input,
-            currentStep        = botStep,
-            wallets            = state.wallets,
-            expenseCategories  = state.expenseCategories,
-            incomeCategories   = state.incomeCategories,
-            totalBalance       = totalBalance
+        val result       = botHandler.handle(
+            input             = input,
+            currentStep       = botStep,
+            wallets           = state.wallets,
+            expenseCategories = state.expenseCategories,
+            incomeCategories  = state.incomeCategories,
+            totalBalance      = totalBalance
         )
-
         botStep = result.nextStep
-
-        // Perintah rangkuman — generate di sini karena butuh data transaksi
-        if (result.text == "__RANGKUMAN__") {
-            handleRangkuman()
-            return
-        }
-
-        if (result.saveTransaction != null) {
-            saveBotTransaction(result.saveTransaction)
-        }
-
-        addMessage(UiMessage(
-            role   = "model",
-            text   = result.text,
-            option = result.option
-        ))
+        if (result.text == "__RANGKUMAN__") { handleRangkuman(); return }
+        if (result.saveTransaction != null) saveBotTransaction(result.saveTransaction)
+        addMessage(UiMessage(role = "model", text = result.text, option = result.option))
     }
 
     private fun handleRangkuman() {
         val state   = _uiState.value
         val account = state.activeAccount ?: return
-        val now        = LocalDate.now()
-        val startMonth = now.withDayOfMonth(1)
-
+        val now     = LocalDate.now()
+        val start   = now.withDayOfMonth(1)
         viewModelScope.launch {
             try {
                 combine(
-                    transactionRepo.getTransactionsByPeriod(account.id, startMonth, now),
-                    transactionRepo.getTotalIncome(account.id, startMonth, now),
-                    transactionRepo.getTotalExpense(account.id, startMonth, now)
+                    transactionRepo.getTransactionsByPeriod(account.id, start, now),
+                    transactionRepo.getTotalIncome(account.id, start, now),
+                    transactionRepo.getTotalExpense(account.id, start, now)
                 ) { _, income, expense -> Pair(income ?: 0L, expense ?: 0L) }
                     .first()
                     .let { (income, expense) ->
                         val fmt = java.text.NumberFormat.getNumberInstance(java.util.Locale("id", "ID"))
                         fun rp(v: Long) = "Rp ${fmt.format(v)}"
-
                         val text = buildString {
                             appendLine("📊 *Rangkuman ${now.month.getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale("id", "ID"))} ${now.year}*")
                             appendLine()
@@ -266,7 +344,6 @@ class ChatViewModel @Inject constructor(
             .find { it.name.equals(req.categoryName, ignoreCase = true) } ?: return
         val wallet    = state.wallets
             .find { it.name.equals(req.walletName, ignoreCase = true) } ?: return
-
         viewModelScope.launch {
             try {
                 transactionRepo.addTransaction(
@@ -284,7 +361,7 @@ class ChatViewModel @Inject constructor(
         }
     }
 
-    // ── Option selected (chip) ────────────────────────────────────────────────
+    // ── Option selected ───────────────────────────────────────────────────────
     fun onOptionSelected(option: ChatOption, selectedValue: String) {
         addMessage(UiMessage(role = "user", text = selectedValue))
 
@@ -295,37 +372,17 @@ class ChatViewModel @Inject constructor(
 
         val historySnapshot = chatHistory.toList()
         chatHistory.add("user" to selectedValue)
-        _uiState.value = _uiState.value.copy(isTyping = true)
 
-        val loadingId = UUID.randomUUID().toString()
-        addMessage(UiMessage(id = loadingId, role = "model", text = "", isLoading = true))
+        lastUserMessage     = selectedValue
+        lastHistorySnapshot = historySnapshot
 
-        viewModelScope.launch {
-            val result = geminiRepo.sendMessage(
-                userMessage  = selectedValue,
-                chatHistory  = historySnapshot,
-                systemPrompt = systemPrompt
-            )
-            removeMessage(loadingId)
-            _uiState.value = _uiState.value.copy(isTyping = false)
-            result.fold(
-                onSuccess = { parsed ->
-                    addMessage(UiMessage(role = "model", text = parsed.text, option = parsed.option))
-                    chatHistory.add("model" to parsed.text)
-                    if (parsed.option is ChatOption.TransactionConfirm) preparePendingTransaction(parsed.option)
-                },
-                onFailure = { error ->
-                    addMessage(UiMessage(role = "model", text = error.message ?: "Error", isError = true))
-                }
-            )
-        }
+        executeAiRequest(selectedValue, historySnapshot)
     }
 
-    // ── Konfirmasi transaksi AI ───────────────────────────────────────────────
+    // ── Transaksi ─────────────────────────────────────────────────────────────
     fun confirmTransaction() {
         val pending   = _uiState.value.pendingTransaction ?: return
         val accountId = _uiState.value.activeAccount?.id ?: return
-
         viewModelScope.launch {
             try {
                 transactionRepo.addTransaction(
@@ -334,12 +391,22 @@ class ChatViewModel @Inject constructor(
                     amount     = pending.amount,
                     categoryId = pending.categoryId,
                     walletId   = pending.walletId,
+                    note       = pending.desc.ifBlank { null },
                     date       = LocalDate.now(),
                     time       = LocalTime.now()
                 )
                 _uiState.value = _uiState.value.copy(pendingTransaction = null)
-                addMessage(UiMessage(role = "user", text = "Simpan"))
-                chatHistory.add("user" to "Simpan")
+                clearAllOptions()
+                val fmt       = java.text.NumberFormat.getNumberInstance(java.util.Locale("id", "ID"))
+                val now       = LocalTime.now()
+                val timeStr   = "%02d:%02d".format(now.hour, now.minute)
+                val sign      = if (pending.type == "INCOME") "+" else "-"
+                val titlePart = if (pending.desc.isNotBlank()) " · ${pending.desc}" else ""
+                addMessage(UiMessage(
+                    role = "model",
+                    text = "Tersimpan.$titlePart ${sign}Rp ${java.text.NumberFormat.getNumberInstance(java.util.Locale("id","ID")).format(pending.amount)} · ${pending.categoryName} · ${pending.walletName} · $timeStr"
+                ))
+                chatHistory.add("model" to "Transaksi tersimpan.")
             } catch (e: Exception) {
                 addMessage(UiMessage(role = "model", text = "Gagal menyimpan: ${e.message}", isError = true))
             }
@@ -348,34 +415,65 @@ class ChatViewModel @Inject constructor(
 
     fun cancelTransaction() {
         _uiState.value = _uiState.value.copy(pendingTransaction = null)
+        clearAllOptions()
         addMessage(UiMessage(role = "user", text = "Batal"))
         chatHistory.add("user" to "Batal")
     }
 
+    private fun clearAllOptions() {
+        _uiState.value = _uiState.value.copy(
+            messages = _uiState.value.messages.map { msg ->
+                if (msg.option != null) msg.copy(option = null) else msg
+            }
+        )
+    }
+
     fun clearChat() {
+        generationJob?.cancel()
+        retryJob?.cancel()
         chatHistory.clear()
-        botStep        = BotStep.Idle
-        _uiState.value = _uiState.value.copy(messages = emptyList(), isBotMode = false)
+        botStep              = BotStep.Idle
+        currentLoadingId     = null
+        lastUserMessage      = ""
+        lastHistorySnapshot  = emptyList()
+        _uiState.value       = _uiState.value.copy(
+            messages         = emptyList(),
+            isBotMode        = false,
+            isTyping         = false,
+            connectionStatus = ConnectionStatus.CONNECTED,
+            retryCountdown   = 0
+        )
     }
 
     private fun preparePendingTransaction(confirm: ChatOption.TransactionConfirm) {
-        val state    = _uiState.value
-        val category = (state.expenseCategories + state.incomeCategories)
-            .find { it.name.equals(confirm.category, ignoreCase = true) }
-        val wallet   = state.wallets
-            .find { it.name.equals(confirm.wallet, ignoreCase = true) }
-
+        if (confirm.amount <= 0 || confirm.wallet.isBlank()) return
+        val state   = _uiState.value
+        val allCats = state.expenseCategories + state.incomeCategories
+        val category = allCats.find { it.name.equals(confirm.category, ignoreCase = true) }
+            ?: allCats.find { it.name.contains(confirm.category, ignoreCase = true) }
+            ?: allCats.find { confirm.category.contains(it.name, ignoreCase = true) }
+        val wallet = state.wallets.find { it.name.equals(confirm.wallet, ignoreCase = true) }
+            ?: state.wallets.find { it.name.contains(confirm.wallet, ignoreCase = true) }
+            ?: state.wallets.find { confirm.wallet.contains(it.name, ignoreCase = true) }
         if (category != null && wallet != null) {
             _uiState.value = _uiState.value.copy(
                 pendingTransaction = PendingTransaction(
                     type         = confirm.type,
                     amount       = confirm.amount,
-                    categoryName = confirm.category,
-                    walletName   = confirm.wallet,
+                    categoryName = category.name,
+                    walletName   = wallet.name,
                     categoryId   = category.id,
-                    walletId     = wallet.id
+                    walletId     = wallet.id,
+                    desc         = confirm.title
                 )
             )
+        } else {
+            val missing = buildString {
+                if (category == null) append("kategori '${confirm.category}' tidak dikenali")
+                if (category == null && wallet == null) append(", ")
+                if (wallet == null) append("dompet '${confirm.wallet}' tidak dikenali")
+            }
+            addMessage(UiMessage(role = "model", text = "*mengernyit* $missing.", isError = true))
         }
     }
 
@@ -384,8 +482,12 @@ class ChatViewModel @Inject constructor(
     }
 
     private fun removeMessage(id: String) {
-        _uiState.value = _uiState.value.copy(
-            messages = _uiState.value.messages.filter { it.id != id }
-        )
+        _uiState.value = _uiState.value.copy(messages = _uiState.value.messages.filter { it.id != id })
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        generationJob?.cancel()
+        retryJob?.cancel()
     }
 }

@@ -1,81 +1,87 @@
-// app/src/main/java/com/sndiy/chatfin/ai/ChatOptionsParser.kt
-
 package com.sndiy.chatfin.ai
 
 import org.json.JSONObject
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/**
- * Tipe-tipe pilihan yang bisa ditampilkan AI di chat
- */
 sealed class ChatOption {
-    // Pilihan kategori
     data class CategoryOptions(val options: List<String>) : ChatOption()
-
-    // Pilihan dompet
     data class WalletOptions(val options: List<String>) : ChatOption()
-
-    // Konfirmasi transaksi sebelum disimpan
     data class TransactionConfirm(
-        val type: String,       // INCOME | EXPENSE | TRANSFER
+        val type: String,
         val amount: Long,
         val category: String,
-        val wallet: String
+        val wallet: String,
+        val title: String = ""
     ) : ChatOption()
-
-    // Pilihan ya/tidak
     data class YesNo(val question: String) : ChatOption()
 }
 
-/**
- * Hasil parse pesan AI:
- * text = bagian teks biasa (ucapan karakter)
- * option = pilihan yang perlu ditampilkan (null jika tidak ada)
- */
 data class ParsedMessage(
     val text: String,
     val option: ChatOption? = null
 )
 
-/**
- * Parser untuk memisahkan teks karakter dari blok [CHATFIN_OPTIONS]
- */
 @Singleton
 class ChatOptionsParser @Inject constructor() {
 
-    private val optionsPattern = Regex(
+    // Tag normal
+    private val tagPattern = Regex(
         """\[CHATFIN_OPTIONS\](.*?)\[/CHATFIN_OPTIONS\]""",
         RegexOption.DOT_MATCHES_ALL
     )
 
+    // Fallback: JSON mentah yang nyasar di teks (tanpa tag)
+    private val rawConfirmPattern = Regex(
+        """\{[^{}]*"type"\s*:\s*"confirm"[^{}]*"transaction"\s*:\s*\{[^{}]*\}[^{}]*\}""",
+        setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
+    )
+    private val rawCategoryPattern = Regex(
+        """\{[^{}]*"type"\s*:\s*"category"[^{}]*"options"\s*:\s*\[[^\]]*\][^{}]*\}""",
+        setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
+    )
+    private val rawWalletPattern = Regex(
+        """\{[^{}]*"type"\s*:\s*"wallet"[^{}]*"options"\s*:\s*\[[^\]]*\][^{}]*\}""",
+        setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
+    )
+
     fun parse(rawMessage: String): ParsedMessage {
-        val match = optionsPattern.find(rawMessage)
-            ?: return ParsedMessage(text = rawMessage.trim())
+        // 1. Coba tag normal dulu
+        val tagMatch = tagPattern.find(rawMessage)
+        if (tagMatch != null) {
+            val text   = rawMessage.replace(tagMatch.value, "").trim()
+            val json   = tagMatch.groupValues[1].trim()
+            val option = parseOption(json)
+            return ParsedMessage(text = text, option = option)
+        }
 
-        // Pisahkan teks biasa dan JSON options
-        val text   = rawMessage.replace(match.value, "").trim()
-        val json   = match.groupValues[1].trim()
-        val option = parseOption(json)
+        // 2. Fallback: detect JSON mentah di teks biasa
+        val fallbackMatch = rawConfirmPattern.find(rawMessage)
+            ?: rawCategoryPattern.find(rawMessage)
+            ?: rawWalletPattern.find(rawMessage)
 
-        return ParsedMessage(text = text, option = option)
+        if (fallbackMatch != null) {
+            val text   = rawMessage.replace(fallbackMatch.value, "").trim()
+            val option = parseOption(fallbackMatch.value.trim())
+            return ParsedMessage(text = text, option = option)
+        }
+
+        // 3. Tidak ada options sama sekali
+        return ParsedMessage(text = rawMessage.trim())
     }
 
     private fun parseOption(json: String): ChatOption? {
         return try {
             val obj  = JSONObject(json)
             val type = obj.getString("type")
-
             when (type) {
                 "category" -> {
                     val list = obj.getJSONArray("options")
-                    val opts = (0 until list.length()).map { list.getString(it) }
-                    ChatOption.CategoryOptions(opts)
+                    ChatOption.CategoryOptions((0 until list.length()).map { list.getString(it) })
                 }
                 "wallet" -> {
                     val list = obj.getJSONArray("options")
-                    val opts = (0 until list.length()).map { list.getString(it) }
-                    ChatOption.WalletOptions(opts)
+                    ChatOption.WalletOptions((0 until list.length()).map { list.getString(it) })
                 }
                 "confirm" -> {
                     val tx = obj.getJSONObject("transaction")
@@ -83,12 +89,11 @@ class ChatOptionsParser @Inject constructor() {
                         type     = tx.getString("type"),
                         amount   = tx.getLong("amount"),
                         category = tx.getString("category"),
-                        wallet   = tx.getString("wallet")
+                        wallet   = tx.getString("wallet"),
+                        title    = tx.optString("title", "")
                     )
                 }
-                "yesno" -> {
-                    ChatOption.YesNo(question = obj.getString("question"))
-                }
+                "yesno" -> ChatOption.YesNo(question = obj.getString("question"))
                 else -> null
             }
         } catch (e: Exception) {
