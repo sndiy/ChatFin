@@ -1,21 +1,21 @@
 {
   "project_info": {
-    "project_number": "524347939247",
-    "project_id": "my-project-of-my-love",
-    "storage_bucket": "my-project-of-my-love.firebasestorage.app"
+    "project_number": "117617139696",
+    "project_id": "chatfin-ada27",
+    "storage_bucket": "chatfin-ada27.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:524347939247:android:5bf783958c41a8e6beb75a",
+        "mobilesdk_app_id": "1:117617139696:android:eb47bb48db7181c4794735",
         "android_client_info": {
-          "package_name": "com.sndiy.chatfin.debug"
+          "package_name": "com.sndiy.chatfin"
         }
       },
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyBid1LdKECaDkVPSaz82Z3O33FSGdDrEKo"
+          "current_key": "AIzaSyBUpp6uNim218D7VOezk50aiHv0q5fJfFs"
         }
       ],
       "services": {

@@ -1,43 +1,47 @@
-// app/src/main/java/com/sndiy/chatfin/core/data/security/SecureStorage.kt
-
 package com.sndiy.chatfin.core.data.security
 
 import android.content.Context
+import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
+import javax.inject.Singleton
 
-// Penyimpanan terenkripsi untuk data sensitif
-// Menggunakan AES256-GCM (enkripsi) + AES256-SIV (enkripsi key)
-class SecureStorage @Inject constructor(context: Context) {
-
+@Singleton
+class SecureStorage @Inject constructor(
+    @ApplicationContext private val context: Context
+) {
     private val masterKey = MasterKey.Builder(context)
         .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
         .build()
 
-    private val prefs = EncryptedSharedPreferences.create(
+    private val prefs: SharedPreferences = EncryptedSharedPreferences.create(
         context,
-        "chatfin_secure_prefs",
+        "chatfin_secure",
         masterKey,
         EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
         EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
     )
 
-    companion object {
-        private const val KEY_API_KEY            = "gemini_api_key"
-        private const val KEY_ACTIVE_ACCOUNT_ID  = "active_account_id"
-    }
-
-    // API Key Gemini — dimasukkan user dari Settings
     var geminiApiKey: String?
-        get()      = prefs.getString(KEY_API_KEY, null)
-        set(value) = prefs.edit().putString(KEY_API_KEY, value).apply()
+        get() = prefs.getString(KEY_GEMINI_API, null)
+        set(value) = prefs.edit().let {
+            if (value.isNullOrBlank()) it.remove(KEY_GEMINI_API)
+            else it.putString(KEY_GEMINI_API, value)
+            it.apply()
+        }
 
-    // ID akun yang sedang aktif — persist walau app ditutup
     var activeAccountId: String?
-        get()      = prefs.getString(KEY_ACTIVE_ACCOUNT_ID, null)
-        set(value) = prefs.edit().putString(KEY_ACTIVE_ACCOUNT_ID, value).apply()
+        get() = prefs.getString(KEY_ACTIVE_ACCOUNT, null)
+        set(value) = prefs.edit().let {
+            if (value.isNullOrBlank()) it.remove(KEY_ACTIVE_ACCOUNT)
+            else it.putString(KEY_ACTIVE_ACCOUNT, value)
+            it.apply()
+        }
 
-    // Hapus semua data (dipakai saat reset app)
-    fun clearAll() = prefs.edit().clear().apply()
+    companion object {
+        private const val KEY_GEMINI_API     = "gemini_api_key"
+        private const val KEY_ACTIVE_ACCOUNT = "active_account_id"
+    }
 }

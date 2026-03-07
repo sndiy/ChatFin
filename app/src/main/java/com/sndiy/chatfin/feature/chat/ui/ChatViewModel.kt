@@ -1,12 +1,9 @@
-// app/src/main/java/com/sndiy/chatfin/feature/chat/ui/ChatViewModel.kt
-
 package com.sndiy.chatfin.feature.chat.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.sndiy.chatfin.ai.*
 import com.sndiy.chatfin.core.data.local.entity.*
-import com.sndiy.chatfin.feature.character.data.repository.CharacterRepository
 import com.sndiy.chatfin.feature.finance.account.data.repository.AccountRepository
 import com.sndiy.chatfin.feature.finance.transaction.data.repository.CategoryRepository
 import com.sndiy.chatfin.feature.finance.transaction.data.repository.TransactionRepository
@@ -29,15 +26,14 @@ data class UiMessage(
 )
 
 data class ChatUiState(
-    val messages: List<UiMessage>                = emptyList(),
-    val inputText: String                        = "",
-    val isTyping: Boolean                        = false,
-    val activeCharacter: CharacterProfileEntity? = null,
-    val activeAccount: FinanceAccountEntity?     = null,
-    val wallets: List<WalletEntity>              = emptyList(),
-    val expenseCategories: List<CategoryEntity>  = emptyList(),
-    val incomeCategories: List<CategoryEntity>   = emptyList(),
-    val pendingTransaction: PendingTransaction?  = null
+    val messages: List<UiMessage>               = emptyList(),
+    val inputText: String                       = "",
+    val isTyping: Boolean                       = false,
+    val activeAccount: FinanceAccountEntity?    = null,
+    val wallets: List<WalletEntity>             = emptyList(),
+    val expenseCategories: List<CategoryEntity> = emptyList(),
+    val incomeCategories: List<CategoryEntity>  = emptyList(),
+    val pendingTransaction: PendingTransaction? = null
 )
 
 data class PendingTransaction(
@@ -56,7 +52,6 @@ class ChatViewModel @Inject constructor(
     private val walletRepo: WalletRepository,
     private val categoryRepo: CategoryRepository,
     private val transactionRepo: TransactionRepository,
-    private val characterRepo: CharacterRepository,
     private val systemPromptBuilder: SystemPromptBuilder,
     private val contextBuilder: FinanceContextBuilder
 ) : ViewModel() {
@@ -68,36 +63,14 @@ class ChatViewModel @Inject constructor(
     private var systemPrompt: String = ""
 
     init {
-        seedDefaultCharacter()
-        observeActiveCharacter()
         observeActiveAccount()
     }
 
-    // Seed karakter default jika belum ada
-    private fun seedDefaultCharacter() {
-        viewModelScope.launch {
-            characterRepo.seedDefaultCharactersIfEmpty()
-        }
-    }
-
-    // Observe karakter aktif
-    private fun observeActiveCharacter() {
-        viewModelScope.launch {
-            characterRepo.getActiveCharacter().collect { character ->
-                _uiState.value = _uiState.value.copy(activeCharacter = character)
-                rebuildSystemPrompt()
-            }
-        }
-    }
-
-    // Observe akun aktif
     private fun observeActiveAccount() {
         viewModelScope.launch {
             accountRepo.getActiveAccount().collect { account ->
                 _uiState.value = _uiState.value.copy(activeAccount = account)
-                if (account != null) {
-                    loadAccountData(account.id)
-                }
+                if (account != null) loadAccountData(account.id)
             }
         }
     }
@@ -122,7 +95,7 @@ class ChatViewModel @Inject constructor(
     }
 
     private fun rebuildSystemPrompt() {
-        val state      = _uiState.value
+        val state = _uiState.value
         val financeCtx = contextBuilder.buildContext(
             account           = state.activeAccount,
             wallets           = state.wallets,
@@ -131,27 +104,20 @@ class ChatViewModel @Inject constructor(
             totalIncome       = 0L,
             totalExpense      = 0L
         )
-        systemPrompt = systemPromptBuilder.build(
-            character      = state.activeCharacter,
-            financeContext = financeCtx
-        )
+        systemPrompt = systemPromptBuilder.build(financeContext = financeCtx)
     }
 
-    // ── Input ─────────────────────────────────────────────────────────────────
     fun onInputChange(text: String) {
         _uiState.value = _uiState.value.copy(inputText = text)
     }
 
-    // ── Kirim pesan ───────────────────────────────────────────────────────────
     fun sendMessage() {
         val text = _uiState.value.inputText.trim()
         if (text.isBlank() || _uiState.value.isTyping) return
 
         addMessage(UiMessage(role = "user", text = text))
-
         val historySnapshot = chatHistory.toList()
         chatHistory.add("user" to text)
-
         _uiState.value = _uiState.value.copy(inputText = "", isTyping = true)
 
         val loadingId = UUID.randomUUID().toString()
@@ -169,11 +135,9 @@ class ChatViewModel @Inject constructor(
         }
     }
 
-    // ── Tap pilihan dari AI ───────────────────────────────────────────────────
     fun onOptionSelected(option: ChatOption, selectedValue: String) {
         val historySnapshot = chatHistory.toList()
         chatHistory.add("user" to selectedValue)
-
         addMessage(UiMessage(role = "user", text = selectedValue))
         _uiState.value = _uiState.value.copy(isTyping = true)
 
@@ -195,11 +159,7 @@ class ChatViewModel @Inject constructor(
     private fun handleResult(result: Result<ParsedMessage>) {
         result.fold(
             onSuccess = { parsed ->
-                addMessage(UiMessage(
-                    role   = "model",
-                    text   = parsed.text,
-                    option = parsed.option
-                ))
+                addMessage(UiMessage(role = "model", text = parsed.text, option = parsed.option))
                 chatHistory.add("model" to parsed.text)
                 if (parsed.option is ChatOption.TransactionConfirm) {
                     preparePendingTransaction(parsed.option)
@@ -215,7 +175,6 @@ class ChatViewModel @Inject constructor(
         )
     }
 
-    // ── Konfirmasi transaksi ──────────────────────────────────────────────────
     fun confirmTransaction() {
         val pending   = _uiState.value.pendingTransaction ?: return
         val accountId = _uiState.value.activeAccount?.id ?: return
@@ -232,9 +191,6 @@ class ChatViewModel @Inject constructor(
                     time       = LocalTime.now()
                 )
                 _uiState.value = _uiState.value.copy(pendingTransaction = null)
-
-                // Beritahu AI bahwa transaksi berhasil disimpan
-                val successMsg = "Transaksi berhasil disimpan ✅"
                 addMessage(UiMessage(role = "user", text = "Simpan"))
                 chatHistory.add("user" to "Simpan")
             } catch (e: Exception) {
@@ -258,7 +214,6 @@ class ChatViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(messages = emptyList())
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
     private fun preparePendingTransaction(confirm: ChatOption.TransactionConfirm) {
         val state    = _uiState.value
         val category = (state.expenseCategories + state.incomeCategories)
@@ -281,9 +236,7 @@ class ChatViewModel @Inject constructor(
     }
 
     private fun addMessage(msg: UiMessage) {
-        _uiState.value = _uiState.value.copy(
-            messages = _uiState.value.messages + msg
-        )
+        _uiState.value = _uiState.value.copy(messages = _uiState.value.messages + msg)
     }
 
     private fun removeMessage(id: String) {

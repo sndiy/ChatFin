@@ -1,5 +1,3 @@
-// app/src/main/java/com/sndiy/chatfin/core/data/local/entity/FinanceAccountEntity.kt
-
 package com.sndiy.chatfin.core.data.local.entity
 
 import androidx.room.Entity
