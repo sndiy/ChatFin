@@ -1,5 +1,3 @@
-// app/src/main/java/com/sndiy/chatfin/ai/GeminiRepository.kt
-
 package com.sndiy.chatfin.ai
 
 import javax.inject.Inject
@@ -19,6 +17,9 @@ class GeminiRepository @Inject constructor(
             val rawText = client.sendMessage(userMessage, chatHistory, systemPrompt)
             android.util.Log.d("GeminiRepo", "OK: ${rawText.take(200)}")
             Result.success(parser.parse(rawText))
+        } catch (e: QuotaExhaustedException) {
+            android.util.Log.w("GeminiRepo", "Semua model quota habis")
+            Result.failure(e)
         } catch (e: IllegalArgumentException) {
             android.util.Log.e("GeminiRepo", "Config: ${e.message}")
             Result.failure(e)
@@ -28,8 +29,6 @@ class GeminiRepository @Inject constructor(
                 e.message?.contains("API_KEY", ignoreCase = true) == true ||
                         e.message?.contains("API key", ignoreCase = true) == true ->
                     "API Key tidak valid. Periksa di Setelan."
-                e.message?.contains("RESOURCE_EXHAUSTED") == true ->
-                    "Kuota Gemini habis. Coba lagi besok."
                 e.message?.contains("NOT_FOUND") == true ->
                     "Model tidak tersedia."
                 e.message?.contains("PERMISSION_DENIED") == true ->
