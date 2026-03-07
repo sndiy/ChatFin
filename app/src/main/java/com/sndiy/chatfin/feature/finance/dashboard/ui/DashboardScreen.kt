@@ -13,9 +13,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.*
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.sndiy.chatfin.core.data.local.entity.TransactionEntity
 import com.sndiy.chatfin.core.data.local.entity.WalletEntity
-import com.sndiy.chatfin.feature.dashboard.DashboardViewModel
 import java.text.NumberFormat
 import java.util.Locale
 
@@ -25,13 +23,11 @@ fun DashboardScreen(
     onNavigateToChat: () -> Unit = {},
     viewModel: DashboardViewModel = hiltViewModel()
 ) {
-    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val uiState       by viewModel.uiState.collectAsStateWithLifecycle()
     var showOnboarding by remember { mutableStateOf(false) }
 
     LaunchedEffect(uiState.isLoading, uiState.isOnboarded) {
-        if (!uiState.isLoading && !uiState.isOnboarded) {
-            showOnboarding = true
-        }
+        if (!uiState.isLoading && !uiState.isOnboarded) showOnboarding = true
     }
 
     if (showOnboarding) {
@@ -61,8 +57,8 @@ fun DashboardScreen(
             }
         } else {
             LazyColumn(
-                modifier = Modifier.fillMaxSize().padding(padding),
-                contentPadding = PaddingValues(16.dp),
+                modifier        = Modifier.fillMaxSize().padding(padding),
+                contentPadding  = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 item {
@@ -72,18 +68,17 @@ fun DashboardScreen(
                         monthlyExpense = uiState.monthlyExpense
                     )
                 }
-                item {
-                    WalletsSection(wallets = uiState.wallets)
-                }
+                item { WalletsSection(wallets = uiState.wallets) }
+
                 if (uiState.recentTransactions.isNotEmpty()) {
                     item {
                         Text(
                             "Transaksi Terbaru",
-                            style = MaterialTheme.typography.titleMedium,
+                            style      = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold
                         )
                     }
-                    items(uiState.recentTransactions) { tx ->
+                    items(uiState.recentTransactions, key = { it.id }) { tx ->
                         TransactionItem(tx = tx)
                     }
                 } else {
@@ -95,10 +90,9 @@ fun DashboardScreen(
                             ) {
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                     Icon(
-                                        Icons.Default.Chat,
-                                        contentDescription = null,
+                                        Icons.Default.Chat, null,
                                         modifier = Modifier.size(48.dp),
-                                        tint = MaterialTheme.colorScheme.primary
+                                        tint     = MaterialTheme.colorScheme.primary
                                     )
                                     Spacer(Modifier.height(8.dp))
                                     Text("Belum ada transaksi", style = MaterialTheme.typography.bodyLarge)
@@ -122,7 +116,7 @@ private fun BalanceSummaryCard(totalBalance: Long, monthlyIncome: Long, monthlyE
     val fmt = NumberFormat.getNumberInstance(Locale("id", "ID"))
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+        colors   = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
     ) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Text(
@@ -132,9 +126,9 @@ private fun BalanceSummaryCard(totalBalance: Long, monthlyIncome: Long, monthlyE
             )
             Text(
                 "Rp ${fmt.format(totalBalance)}",
-                style = MaterialTheme.typography.headlineMedium,
+                style      = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onPrimaryContainer
+                color      = MaterialTheme.colorScheme.onPrimaryContainer
             )
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Column {
@@ -146,7 +140,7 @@ private fun BalanceSummaryCard(totalBalance: Long, monthlyIncome: Long, monthlyE
                     Text(
                         "+ Rp ${fmt.format(monthlyIncome)}",
                         fontWeight = FontWeight.SemiBold,
-                        color = Color(0xFF1B8A4C)
+                        color      = Color(0xFF1B8A4C)
                     )
                 }
                 Column(horizontalAlignment = Alignment.End) {
@@ -158,7 +152,7 @@ private fun BalanceSummaryCard(totalBalance: Long, monthlyIncome: Long, monthlyE
                     Text(
                         "- Rp ${fmt.format(monthlyExpense)}",
                         fontWeight = FontWeight.SemiBold,
-                        color = Color(0xFFE53935)
+                        color      = Color(0xFFE53935)
                     )
                 }
             }
@@ -173,7 +167,7 @@ private fun WalletsSection(wallets: List<WalletEntity>) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
             "Dompet & Rekening",
-            style = MaterialTheme.typography.titleMedium,
+            style      = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold
         )
         wallets.forEach { wallet ->
@@ -181,15 +175,14 @@ private fun WalletsSection(wallets: List<WalletEntity>) {
                 Row(
                     Modifier.padding(16.dp).fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment     = Alignment.CenterVertically
                 ) {
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment     = Alignment.CenterVertically
                     ) {
                         Icon(
-                            Icons.Default.AccountBalanceWallet,
-                            contentDescription = null,
+                            Icons.Default.AccountBalanceWallet, null,
                             tint = MaterialTheme.colorScheme.primary
                         )
                         Column {
@@ -209,17 +202,17 @@ private fun WalletsSection(wallets: List<WalletEntity>) {
 }
 
 @Composable
-private fun TransactionItem(tx: TransactionEntity) {
+private fun TransactionItem(tx: TransactionDisplay) {
     val fmt = NumberFormat.getNumberInstance(Locale("id", "ID"))
     Card(modifier = Modifier.fillMaxWidth()) {
         Row(
             Modifier.padding(12.dp).fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment     = Alignment.CenterVertically
         ) {
             Row(
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment     = Alignment.CenterVertically
             ) {
                 Icon(
                     if (tx.type == "INCOME") Icons.Default.TrendingUp else Icons.Default.TrendingDown,
@@ -227,14 +220,22 @@ private fun TransactionItem(tx: TransactionEntity) {
                     tint = if (tx.type == "INCOME") Color(0xFF1B8A4C) else Color(0xFFE53935)
                 )
                 Column {
-                    Text(tx.categoryId, fontWeight = FontWeight.Medium, style = MaterialTheme.typography.bodyMedium)
-                    Text(tx.date, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        tx.categoryName,
+                        fontWeight = FontWeight.Medium,
+                        style      = MaterialTheme.typography.bodyMedium
+                    )
+                    Text(
+                        if (tx.note.isNullOrBlank()) tx.date else "${tx.date} · ${tx.note}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
             Text(
                 "${if (tx.type == "INCOME") "+" else "-"} Rp ${fmt.format(tx.amount)}",
                 fontWeight = FontWeight.SemiBold,
-                color = if (tx.type == "INCOME") Color(0xFF1B8A4C) else Color(0xFFE53935)
+                color      = if (tx.type == "INCOME") Color(0xFF1B8A4C) else Color(0xFFE53935)
             )
         }
     }
@@ -245,22 +246,23 @@ private fun OnboardingDialog(onConfirm: (String) -> Unit) {
     var name by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = {},
-        title = { Text("Selamat Datang di ChatFin") },
-        text = {
+        title = { Text("Selamat Datang di ChatFin! 👋") },
+        text  = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("Mai akan membantumu mengelola keuangan. Mulai dengan memberi nama profilmu.")
                 OutlinedTextField(
-                    value = name,
+                    value         = name,
                     onValueChange = { name = it },
-                    label = { Text("Nama profil (contoh: Keuangan Pribadi)") },
-                    singleLine = true
+                    label         = { Text("Nama profil (contoh: Keuangan Pribadi)") },
+                    singleLine    = true,
+                    modifier      = Modifier.fillMaxWidth()
                 )
             }
         },
         confirmButton = {
             Button(
-                onClick = { if (name.isNotBlank()) onConfirm(name.trim()) },
-                enabled = name.isNotBlank()
+                onClick  = { if (name.isNotBlank()) onConfirm(name.trim()) },
+                enabled  = name.isNotBlank()
             ) { Text("Mulai") }
         }
     )

@@ -79,33 +79,48 @@ class ChatViewModel @Inject constructor(
 
     private fun loadAccountData(accountId: String) {
         viewModelScope.launch {
+            val now   = LocalDate.now()
+            val start = now.withDayOfMonth(1)
+
             combine(
                 walletRepo.getWalletsByAccount(accountId),
                 categoryRepo.getCategoriesByAccountAndType(accountId, "EXPENSE"),
-                categoryRepo.getCategoriesByAccountAndType(accountId, "INCOME")
-            ) { wallets, expCats, incCats -> Triple(wallets, expCats, incCats) }
-                .collect { (wallets, expCats, incCats) ->
-                    _uiState.value = _uiState.value.copy(
-                        wallets           = wallets,
-                        expenseCategories = expCats,
-                        incomeCategories  = incCats
-                    )
-                    rebuildSystemPrompt()
+                categoryRepo.getCategoriesByAccountAndType(accountId, "INCOME"),
+                transactionRepo.getTotalIncome(accountId, start, now),
+                transactionRepo.getTotalExpense(accountId, start, now)
+            ) { wallets, expCats, incCats, income, expense ->
+                object {
+                    val w  = wallets
+                    val ec = expCats
+                    val ic = incCats
+                    val ti = income ?: 0L
+                    val te = expense ?: 0L
                 }
+            }.collect { data ->
+                _uiState.value = _uiState.value.copy(
+                    wallets           = data.w,
+                    expenseCategories = data.ec,
+                    incomeCategories  = data.ic
+                )
+                rebuildSystemPrompt(data.ti, data.te)
+            }
         }
     }
 
-    private fun rebuildSystemPrompt() {
+    private fun rebuildSystemPrompt(totalIncome: Long = 0L, totalExpense: Long = 0L) {
         val state = _uiState.value
         val ctx   = contextBuilder.buildContext(
             account           = state.activeAccount,
             wallets           = state.wallets,
             expenseCategories = state.expenseCategories,
             incomeCategories  = state.incomeCategories,
-            totalIncome       = 0L,
-            totalExpense      = 0L
+            totalIncome       = totalIncome,
+            totalExpense      = totalExpense
         )
-        systemPrompt = systemPromptBuilder.build(financeContext = ctx)
+        systemPrompt = systemPromptBuilder.build(
+            financeContext = ctx,
+            userName       = state.activeAccount?.name ?: "Kamu"
+        )
     }
 
     fun onInputChange(text: String) {

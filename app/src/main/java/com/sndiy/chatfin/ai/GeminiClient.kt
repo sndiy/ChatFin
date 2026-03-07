@@ -13,8 +13,8 @@ class GeminiClient @Inject constructor(
     private val secureStorage: SecureStorage
 ) {
     companion object {
-        private const val MODEL_PRIMARY  = "gemini-2.5-flash-preview-04-17"
-        private const val MODEL_FALLBACK = "gemini-2.5-flash-lite-preview-06-17"
+        private const val MODEL_PRIMARY  = "gemini-2.5-flash"
+        private const val MODEL_FALLBACK = "gemini-2.5-flash-lite"
     }
 
     fun resolveApiKey(): String {
