@@ -13,5 +13,4 @@
 .externalNativeBuild
 .cxx
 local.properties
-setup.txt.bat
 google-services.json
