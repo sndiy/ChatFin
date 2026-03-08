@@ -1,6 +1,7 @@
 [versions]
 # Core
 agp                         = "8.9.0"
+composeMarkdown             = "0.5.0"
 kotlin                      = "2.1.10"
 ksp                         = "2.1.10-1.0.31"
 
@@ -56,6 +57,7 @@ espresso                    = "3.6.1"
 [libraries]
 # Compose BOM — satu versi untuk semua library Compose
 compose-bom                 = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
+compose-markdown = { module = "com.github.jeziellago:compose-markdown", version.ref = "composeMarkdown" }
 compose-ui                  = { group = "androidx.compose.ui", name = "ui" }
 compose-ui-graphics         = { group = "androidx.compose.ui", name = "ui-graphics" }
 compose-ui-tooling          = { group = "androidx.compose.ui", name = "ui-tooling" }

@@ -94,6 +94,8 @@ dependencies {
     implementation(libs.activity.compose)
     implementation(libs.navigation.compose)
 
+    implementation(libs.compose.markdown)
+
     debugImplementation(libs.compose.ui.tooling)
     debugImplementation(libs.compose.ui.test.manifest)
 

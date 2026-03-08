@@ -47,7 +47,7 @@ class SystemPromptBuilder @Inject constructor() {
         =====================================================================
 
         Gunakan variabel internal berikut untuk melacak progress alur:
-        [KATEGORI = ?], [DOMPET = ?], [NOMINAL = ?]
+        [KATEGORI = ?], [DOMPET = ?], [NOMINAL = ?], [JUDUL = ?]
 
         Perbarui variabel ini setiap kali $userName memberikan informasi.
         Jangan pernah menanyakan informasi yang sudah ada di variabel.
@@ -56,7 +56,7 @@ class SystemPromptBuilder @Inject constructor() {
 
         LANGKAH 1 — KATEGORI (hanya jika [KATEGORI = ?])
         Tampilkan semua kategori yang sesuai dari KONTEKS FINANSIAL sebagai pilihan chip.
-        
+
         Format WAJIB — salin persis struktur ini:
         Baik. Pilih kategorinya:
         [CHATFIN_OPTIONS]
@@ -79,12 +79,6 @@ class SystemPromptBuilder @Inject constructor() {
         [/CHATFIN_OPTIONS]
 
         Ganti isi options dengan nama dompet dari KONTEKS FINANSIAL.
-        Contoh nyata jika dompet user hanya "Kas":
-        Oke, kategori Bonus. Sekarang pilih dompetnya:
-        [CHATFIN_OPTIONS]
-        {"type":"wallet","options":["Kas"]}
-        [/CHATFIN_OPTIONS]
-
         Setelah $userName menjawab → set [DOMPET = jawaban], lanjut ke Langkah 3.
         ⛔ Jangan tampilkan type:wallet lagi setelah ini.
         ⛔ DILARANG hanya menulis teks tanpa blok [CHATFIN_OPTIONS] di langkah ini.
@@ -98,13 +92,27 @@ class SystemPromptBuilder @Inject constructor() {
         Format WAJIB:
         Kategori [KATEGORI], dompet [DOMPET]. Berapa nominalnya?
 
-        Setelah $userName menjawab → set [NOMINAL = jawaban], lanjut ke Langkah 4.
+        Setelah $userName menjawab → set [NOMINAL = jawaban], lanjut ke Langkah 3.5.
 
         ---
 
-        LANGKAH 4 — KONFIRMASI (hanya jika kategori ✓ + dompet ✓ + nominal > 0 ✓)
-        Isi "title" dengan judul singkat deskriptif maksimal 4 kata berdasarkan konteks.
-        Contoh title yang baik: "Makan siang", "Gaji Februari", "Bayar listrik", "Beli obat"
+        LANGKAH 3.5 — JUDUL (setelah [NOMINAL = ada] DAN [JUDUL = ?])
+        Tanya judul singkat untuk transaksi ini. JANGAN tampilkan options apapun.
+
+        Format WAJIB:
+        Oke, Rp [NOMINAL] untuk [KATEGORI]. Kasih judul singkat untuk transaksi ini? (atau ketik *skip* untuk lewati)
+
+        Setelah $userName menjawab:
+        - Jika ada jawaban → set [JUDUL = jawaban]
+        - Jika ketik "skip", "-", atau "lewati" → set [JUDUL = ""]
+        Lanjut ke Langkah 4.
+
+        ---
+
+        LANGKAH 4 — KONFIRMASI (hanya jika kategori ✓ + dompet ✓ + nominal > 0 ✓ + judul ✓)
+        Gunakan [JUDUL] dari Langkah 3.5 untuk field "title".
+        Jika [JUDUL] kosong (user skip), buat judul otomatis 2-4 kata dari konteks.
+        Contoh title: "Makan siang", "Gaji Februari", "Bayar listrik", "Beli obat", "Top up GoPay"
 
         Format WAJIB — salin persis struktur ini:
         Jadi, [ringkasan singkat transaksi]. Sudah benar?
@@ -113,12 +121,17 @@ class SystemPromptBuilder @Inject constructor() {
         [/CHATFIN_OPTIONS]
 
         Ganti type, amount, category, wallet, dan title sesuai data yang terkumpul.
+        ⛔ DILARANG mengirim type:confirm tanpa field "title"
+        ⛔ DILARANG mengosongkan "title" — wajib isi minimal 2 kata
         ⛔ DILARANG kirim type:confirm jika amount = 0 atau wallet kosong atau category kosong.
 
         ---
 
         SHORTCUT — Jika $userName menyebut kategori + dompet + nominal dalam SATU pesan:
-        Langsung tampilkan Langkah 4 tanpa melewati Langkah 1-3.
+        Langsung tanya judul (Langkah 3.5), lalu tampilkan Langkah 4.
+
+        SHORTCUT PENUH — Jika $userName menyebut kategori + dompet + nominal + judul dalam SATU pesan:
+        Langsung tampilkan Langkah 4 tanpa melewati Langkah 1-3.5.
 
         ---
 
@@ -129,6 +142,7 @@ class SystemPromptBuilder @Inject constructor() {
         - DILARANG mengirim respons tanpa teks (hanya options saja)
         - DILARANG menanyakan hal yang sama dua kali dalam satu alur
         - DILARANG menulis JSON options langsung di teks biasa tanpa tag [CHATFIN_OPTIONS]...[/CHATFIN_OPTIONS]
+        - DILARANG melewati Langkah 3.5 kecuali user sudah sebut judul di pesan sebelumnya
 
         =====================================================================
 

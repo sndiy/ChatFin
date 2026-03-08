@@ -9,10 +9,10 @@ import javax.inject.Singleton
 
 sealed class BotStep {
     object Idle : BotStep()
-    data class WaitAmount(val type: String)                                          : BotStep()
-    data class WaitCategory(val type: String, val amount: Long)                      : BotStep()
-    data class WaitWallet(val type: String, val amount: Long, val category: String)  : BotStep()
-    data class WaitDesc(val type: String, val amount: Long, val category: String, val wallet: String) : BotStep()
+    data class WaitAmount(val type: String)                                                          : BotStep()
+    data class WaitCategory(val type: String, val amount: Long)                                      : BotStep()
+    data class WaitWallet(val type: String, val amount: Long, val category: String)                  : BotStep()
+    data class WaitDesc(val type: String, val amount: Long, val category: String, val wallet: String): BotStep()
     data class WaitConfirm(
         val type: String, val amount: Long,
         val category: String, val wallet: String, val desc: String
@@ -21,9 +21,9 @@ sealed class BotStep {
 
 data class BotResult(
     val text: String,
-    val option: ChatOption?     = null,
+    val option: ChatOption?           = null,
     val saveTransaction: SaveRequest? = null,
-    val nextStep: BotStep       = BotStep.Idle
+    val nextStep: BotStep             = BotStep.Idle
 )
 
 data class SaveRequest(
@@ -61,30 +61,26 @@ class BotModeHandler @Inject constructor() {
             cmd == "setor" || cmd.startsWith("setor ") -> {
                 val inline = raw.substringAfter(" ", "").trim()
                 val amount = parseAmount(inline)
-                if (inline.isNotBlank() && amount != null) {
-                    askCategory("INCOME", amount, incomeCategories)
-                } else if (inline.isNotBlank()) {
-                    BotResult("Nominal tidak valid. Contoh: setor 50rb", nextStep = BotStep.Idle)
-                } else {
-                    BotResult("💰 Berapa jumlah yang mau disetor?", nextStep = BotStep.WaitAmount("INCOME"))
+                when {
+                    inline.isNotBlank() && amount != null -> askCategory("INCOME", amount, incomeCategories)
+                    inline.isNotBlank() -> BotResult("Nominal tidak valid. Contoh: setor 50rb", nextStep = BotStep.Idle)
+                    else -> BotResult("💰 Berapa jumlah yang mau disetor?", nextStep = BotStep.WaitAmount("INCOME"))
                 }
             }
 
             cmd == "tarik" || cmd.startsWith("tarik ") -> {
                 val inline = raw.substringAfter(" ", "").trim()
                 val amount = parseAmount(inline)
-                if (inline.isNotBlank() && amount != null) {
-                    askCategory("EXPENSE", amount, expenseCategories)
-                } else if (inline.isNotBlank()) {
-                    BotResult("Nominal tidak valid. Contoh: tarik 30rb", nextStep = BotStep.Idle)
-                } else {
-                    BotResult("💸 Berapa jumlah yang mau ditarik?", nextStep = BotStep.WaitAmount("EXPENSE"))
+                when {
+                    inline.isNotBlank() && amount != null -> askCategory("EXPENSE", amount, expenseCategories)
+                    inline.isNotBlank() -> BotResult("Nominal tidak valid. Contoh: tarik 30rb", nextStep = BotStep.Idle)
+                    else -> BotResult("💸 Berapa jumlah yang mau ditarik?", nextStep = BotStep.WaitAmount("EXPENSE"))
                 }
             }
 
             cmd == "saldo" || cmd == "balance" -> {
                 if (wallets.isEmpty()) {
-                    BotResult("Belum ada dompet. Tambahkan dompet dulu di Setelan.")
+                    BotResult("Belum ada dompet. Tambahkan dulu di Setelan.")
                 } else {
                     val lines = wallets.joinToString("\n") { w -> "• ${w.name}: ${rp(w.balance)}" }
                     BotResult("💼 *Saldo Dompet*\n\n$lines\n\n*Total: ${rp(totalBalance)}*")
@@ -93,7 +89,9 @@ class BotModeHandler @Inject constructor() {
 
             cmd == "rangkuman" || cmd == "summary" -> BotResult("__RANGKUMAN__")
 
-            else -> BotResult("❓ Perintah tidak dikenal. Ketik *help* untuk melihat daftar perintah.")
+            else -> BotResult(
+                "❓ Perintah tidak dikenal.\n\nKetik *help* untuk melihat daftar perintah yang tersedia."
+            )
         }
     }
 
@@ -109,9 +107,7 @@ class BotModeHandler @Inject constructor() {
                 val amount = parseAmount(input)
                 if (amount == null) {
                     BotResult(
-                        "Nominal tidak valid 🤔\n" +
-                                "Contoh yang bisa dipakai:\n" +
-                                "• 50000\n• 50rb\n• 50k\n• 50_000\n• 1.5jt",
+                        "Nominal tidak valid 🤔\nContoh: 50000 · 50rb · 50k · 1.5jt",
                         nextStep = step
                     )
                 } else {
@@ -131,7 +127,7 @@ class BotModeHandler @Inject constructor() {
                 val wallet = wallets.find { it.name.equals(input, ignoreCase = true) }
                 if (wallet == null) askWallet(step.type, step.amount, step.category, wallets, invalid = true)
                 else BotResult(
-                    "📝 Tambahkan deskripsi? (ketik deskripsi atau *skip*)",
+                    "📝 Tambahkan judul? (ketik judul atau *skip*)",
                     nextStep = BotStep.WaitDesc(step.type, step.amount, step.category, wallet.name)
                 )
             }
@@ -144,7 +140,7 @@ class BotModeHandler @Inject constructor() {
             is BotStep.WaitConfirm -> {
                 when (input.lowercase().trim()) {
                     "ya", "y", "iya", "yes", "ok", "oke", "simpan" -> BotResult(
-                        "✅ Transaksi berhasil disimpan!",
+                        "✅ Tersimpan!",
                         saveTransaction = SaveRequest(
                             type         = step.type,
                             amount       = step.amount,
@@ -155,11 +151,11 @@ class BotModeHandler @Inject constructor() {
                         nextStep = BotStep.Idle
                     )
                     "tidak", "batal", "cancel", "no", "n" -> BotResult(
-                        "❌ Transaksi dibatalkan.",
+                        "❌ Dibatalkan.",
                         nextStep = BotStep.Idle
                     )
                     else -> BotResult(
-                        "Ketik *ya* / *oke* untuk simpan atau *tidak* / *batal* untuk cancel.",
+                        "Ketik *ya* untuk simpan atau *tidak* untuk batal.",
                         nextStep = step
                     )
                 }
@@ -206,7 +202,7 @@ class BotModeHandler @Inject constructor() {
         category: String, wallet: String, desc: String
     ): BotResult {
         val typeLabel = if (type == "INCOME") "Pemasukan" else "Pengeluaran"
-        val descLine  = if (desc.isNotBlank()) "\n📋 Deskripsi : $desc" else ""
+        val descLine  = if (desc.isNotBlank()) "\n📋 Judul    : $desc" else ""
         return BotResult(
             text = "📋 *Konfirmasi $typeLabel*\n\n" +
                     "💰 Nominal  : ${rp(amount)}\n" +
@@ -219,9 +215,10 @@ class BotModeHandler @Inject constructor() {
 
     private fun helpMessage() = BotResult(
         """
-        🤖 *Mode Bot Aktif* (AI sedang tidak tersedia)
+        🤖 *Mode Bot* (AI sedang tidak tersedia)
         
-        Perintah yang tersedia:
+        Mode ini aktif saat semua model AI sudah mencapai batas kuota.
+        Gunakan perintah berikut untuk tetap mencatat transaksi:
         
         💰 *setor* [nominal]  → Catat pemasukan
            Contoh: setor 500rb
@@ -235,25 +232,22 @@ class BotModeHandler @Inject constructor() {
         
         ❓ *help*             → Tampilkan perintah ini
         
-        💡 Format nominal yang didukung:
-           50000 · 50rb · 50k · 50_000 · 1.5jt · 1,5jt
-        
+        💡 Format nominal: 50000 · 50rb · 50k · 50_000 · 1.5jt
         💡 Bisa pakai slash: /setor, /tarik, dll.
+        
+        Saat AI kembali tersedia, tekan *Coba lagi* di banner atas.
         """.trimIndent()
     )
 
     fun parseAmount(input: String): Long? {
         if (input.isBlank()) return null
-
-        // Bersihkan spasi dan underscore
         var clean = input.trim().lowercase()
             .replace("_", "")
             .replace(" ", "")
             .replace("rp", "")
 
-        // Handle suffix juta: 1.5jt, 1,5jt, 2jt, 1.5 juta
-        val jutaRegex  = Regex("""^([\d.,]+)\s*j(?:t|uta)?$""")
-        val ribuRegex  = Regex("""^([\d.,]+)\s*(?:rb|ribu|k)$""")
+        val jutaRegex = Regex("""^([\d.,]+)\s*j(?:t|uta)?$""")
+        val ribuRegex = Regex("""^([\d.,]+)\s*(?:rb|ribu|k)$""")
 
         jutaRegex.find(clean)?.let { match ->
             val num = parseDecimal(match.groupValues[1]) ?: return null
@@ -265,16 +259,12 @@ class BotModeHandler @Inject constructor() {
             return (num * 1_000).toLong().takeIf { it > 0 }
         }
 
-        // Angka biasa — hapus titik sebagai pemisah ribuan, ganti koma jadi titik desimal
         clean = clean.replace(".", "").replace(",", ".")
         return clean.toDoubleOrNull()?.toLong()?.takeIf { it > 0 }
     }
 
-    private fun parseDecimal(input: String): Double? {
-        // Normalkan: ganti koma jadi titik untuk desimal
-        val normalized = input.replace(",", ".")
-        return normalized.toDoubleOrNull()
-    }
+    private fun parseDecimal(input: String): Double? =
+        input.replace(",", ".").toDoubleOrNull()
 
     fun isBotCommand(input: String): Boolean {
         val cmd = input.trim().lowercase().trimStart('/')

@@ -220,7 +220,7 @@ private fun TransactionItem(tx: TransactionDisplay) {
                     tint = if (tx.type == "INCOME") Color(0xFF1B8A4C) else Color(0xFFE53935)
                 )
                 Column {
-                    // Judul utama: note kalau ada, fallback ke nama kategori
+                    // Judul: note kalau ada, fallback ke nama kategori
                     Text(
                         text       = tx.note?.takeIf { it.isNotBlank() } ?: tx.categoryName,
                         fontWeight = FontWeight.Medium,
@@ -229,9 +229,17 @@ private fun TransactionItem(tx: TransactionDisplay) {
                     )
                     // Subtitle: kategori · dompet · jam
                     Text(
-                        text  = "${tx.categoryName} · ${tx.walletName} · ${tx.date}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        text  = buildString {
+                            append(tx.categoryName)
+                            append(" · ")
+                            append(tx.walletName)
+                            if (tx.time.isNotBlank()) {
+                                append(" · ")
+                                append(tx.time)
+                            }
+                        },
+                        style   = MaterialTheme.typography.labelSmall,
+                        color   = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1
                     )
                 }

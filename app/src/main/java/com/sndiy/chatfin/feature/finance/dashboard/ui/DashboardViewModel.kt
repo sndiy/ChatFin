@@ -2,7 +2,6 @@ package com.sndiy.chatfin.feature.finance.dashboard.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.sndiy.chatfin.core.data.local.entity.TransactionEntity
 import com.sndiy.chatfin.core.data.local.entity.WalletEntity
 import com.sndiy.chatfin.feature.finance.account.data.repository.AccountRepository
 import com.sndiy.chatfin.feature.finance.transaction.data.repository.CategoryRepository
@@ -22,17 +21,18 @@ data class TransactionDisplay(
     val categoryName: String,
     val walletName: String,
     val date: String,
-    val note: String?   // ini yang jadi judul
+    val time: String,
+    val note: String?
 )
 
 data class DashboardUiState(
-    val isLoading: Boolean                        = true,
-    val isOnboarded: Boolean                      = false,
-    val accountName: String                       = "",
-    val totalBalance: Long                        = 0L,
-    val monthlyIncome: Long                       = 0L,
-    val monthlyExpense: Long                      = 0L,
-    val wallets: List<WalletEntity>               = emptyList(),
+    val isLoading: Boolean                           = true,
+    val isOnboarded: Boolean                         = false,
+    val accountName: String                          = "",
+    val totalBalance: Long                           = 0L,
+    val monthlyIncome: Long                          = 0L,
+    val monthlyExpense: Long                         = 0L,
+    val wallets: List<WalletEntity>                  = emptyList(),
     val recentTransactions: List<TransactionDisplay> = emptyList()
 )
 
@@ -49,9 +49,7 @@ class DashboardViewModel @Inject constructor(
 
     private val dateFmt = DateTimeFormatter.ofPattern("yyyy-MM-dd")
 
-    init {
-        observeDashboard()
-    }
+    init { observeDashboard() }
 
     private fun observeDashboard() {
         viewModelScope.launch {
@@ -66,9 +64,7 @@ class DashboardViewModel @Inject constructor(
                     accountName = account.name
                 )
 
-                val now   = LocalDate.now()
-                val start = now.withDayOfMonth(1).format(dateFmt)
-                val end   = now.format(dateFmt)
+                val now = LocalDate.now()
 
                 combine(
                     walletRepo.getWalletsByAccount(account.id),
@@ -79,12 +75,10 @@ class DashboardViewModel @Inject constructor(
                     Quad(wallets, income ?: 0L, expense ?: 0L, transactions)
                 }.collect { (wallets, income, expense, transactions) ->
 
-                    // Ambil semua kategori untuk mapping ID → nama
+                    // Kategori: sudah include global (accountId IS NULL) dari query DAO
                     val expCats = categoryRepo.getCategoriesByAccountAndType(account.id, "EXPENSE").first()
                     val incCats = categoryRepo.getCategoriesByAccountAndType(account.id, "INCOME").first()
                     val catMap  = (expCats + incCats).associate { it.id to it.name }
-
-                    // Ambil semua dompet untuk mapping ID → nama
                     val walletMap = wallets.associate { it.id to it.name }
 
                     val recent = transactions.take(10).map { tx ->
@@ -95,6 +89,7 @@ class DashboardViewModel @Inject constructor(
                             categoryName = catMap[tx.categoryId] ?: tx.categoryId,
                             walletName   = walletMap[tx.walletId] ?: tx.walletId,
                             date         = tx.date,
+                            time         = tx.time,
                             note         = tx.note
                         )
                     }

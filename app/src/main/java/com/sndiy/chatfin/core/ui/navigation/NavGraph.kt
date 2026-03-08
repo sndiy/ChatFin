@@ -4,6 +4,7 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -21,10 +22,12 @@ import com.sndiy.chatfin.feature.finance.account.ui.AccountFormScreen
 import com.sndiy.chatfin.feature.finance.account.ui.AccountListScreen
 import com.sndiy.chatfin.feature.finance.category.ui.CategoryScreen
 import com.sndiy.chatfin.feature.finance.dashboard.ui.DashboardScreen
+import com.sndiy.chatfin.feature.finance.transaction.ui.TransactionFormScreen
 import com.sndiy.chatfin.feature.finance.transaction.ui.TransactionListScreen
 import com.sndiy.chatfin.feature.finance.transaction.ui.WalletFormScreen
 import com.sndiy.chatfin.feature.finance.transaction.ui.WalletListScreen
 import com.sndiy.chatfin.feature.settings.ui.SettingsScreen
+import com.sndiy.chatfin.feature.splash.ui.SplashScreen
 
 data class BottomNavItem(
     val route: String,
@@ -33,9 +36,10 @@ data class BottomNavItem(
 )
 
 private val bottomNavItems = listOf(
-    BottomNavItem(Screen.Dashboard.route, "Beranda",  Icons.Default.Home),
-    BottomNavItem(Screen.Chat.route,      "Chat Mai", Icons.Default.Chat),
-    BottomNavItem(Screen.Settings.route,  "Setelan",  Icons.Default.Settings),
+    BottomNavItem(Screen.Dashboard.route,       "Beranda",  Icons.Default.Home),
+    BottomNavItem(Screen.TransactionList.route, "Riwayat",  Icons.Default.History),
+    BottomNavItem(Screen.Chat.route,            "Chat Mai", Icons.AutoMirrored.Filled.Chat),
+    BottomNavItem(Screen.Settings.route,        "Setelan",  Icons.Default.Settings),
 )
 
 private val bottomNavRoutes = bottomNavItems.map { it.route }
@@ -93,17 +97,59 @@ fun ChatFinNavGraph(navController: NavHostController) {
         }
     ) { padding ->
         NavHost(
-            navController      = navController,
-            startDestination   = Screen.Dashboard.route,
-            modifier           = Modifier.padding(padding),
-            enterTransition    = { slideInHorizontally(initialOffsetX = { it },      animationSpec = tween(300)) + fadeIn(animationSpec  = tween(300)) },
-            exitTransition     = { slideOutHorizontally(targetOffsetX = { -it / 3 }, animationSpec = tween(300)) + fadeOut(animationSpec = tween(300)) },
-            popEnterTransition = { slideInHorizontally(initialOffsetX = { -it / 3 }, animationSpec = tween(300)) + fadeIn(animationSpec  = tween(300)) },
-            popExitTransition  = { slideOutHorizontally(targetOffsetX = { it },      animationSpec = tween(300)) + fadeOut(animationSpec = tween(300)) }
+            navController    = navController,
+            startDestination = Screen.Splash.route,
+            modifier         = Modifier.padding(padding),
+            enterTransition  = {
+                slideInHorizontally(
+                    initialOffsetX = { it },
+                    animationSpec  = tween(300)
+                ) + fadeIn(animationSpec = tween(300))
+            },
+            exitTransition   = {
+                slideOutHorizontally(
+                    targetOffsetX = { -it / 3 },
+                    animationSpec = tween(300)
+                ) + fadeOut(animationSpec = tween(300))
+            },
+            popEnterTransition = {
+                slideInHorizontally(
+                    initialOffsetX = { -it / 3 },
+                    animationSpec  = tween(300)
+                ) + fadeIn(animationSpec = tween(300))
+            },
+            popExitTransition  = {
+                slideOutHorizontally(
+                    targetOffsetX = { it },
+                    animationSpec = tween(300)
+                ) + fadeOut(animationSpec = tween(300))
+            }
         ) {
+            // ── Splash ─────────────────────────────────────────────────────────
+            composable(
+                route          = Screen.Splash.route,
+                exitTransition = { fadeOut(animationSpec = tween(400)) }
+            ) {
+                SplashScreen(
+                    onNavigateToDashboard  = {
+                        navController.navigate(Screen.Dashboard.route) {
+                            popUpTo(Screen.Splash.route) { inclusive = true }
+                        }
+                    },
+                    onNavigateToOnboarding = {
+                        // Onboarding ditangani DashboardScreen via dialog
+                        navController.navigate(Screen.Dashboard.route) {
+                            popUpTo(Screen.Splash.route) { inclusive = true }
+                        }
+                    }
+                )
+            }
+
             // ── Bottom Nav ─────────────────────────────────────────────────────
             composable(Screen.Dashboard.route) {
-                DashboardScreen(onNavigateToChat = { navController.navigate(Screen.Chat.route) })
+                DashboardScreen(
+                    onNavigateToChat = { navController.navigate(Screen.Chat.route) }
+                )
             }
             composable(Screen.Chat.route) { ChatScreen() }
             composable(Screen.Settings.route) {
@@ -115,7 +161,9 @@ fun ChatFinNavGraph(navController: NavHostController) {
                 AccountListScreen(
                     onNavigateBack          = { navController.popBackStack() },
                     onNavigateToAddAccount  = { navController.navigate(Screen.AccountForm.createRoute()) },
-                    onNavigateToEditAccount = { id -> navController.navigate(Screen.AccountForm.createRoute(id)) }
+                    onNavigateToEditAccount = { id ->
+                        navController.navigate(Screen.AccountForm.createRoute(id))
+                    }
                 )
             }
             composable(
@@ -124,9 +172,9 @@ fun ChatFinNavGraph(navController: NavHostController) {
                     type         = NavType.StringType
                     defaultValue = "new"
                 })
-            ) { back ->
+            ) { backStackEntry ->
                 AccountFormScreen(
-                    accountId      = back.arguments?.getString("accountId") ?: "new",
+                    accountId      = backStackEntry.arguments?.getString("accountId") ?: "new",
                     onNavigateBack = { navController.popBackStack() }
                 )
             }
@@ -137,6 +185,15 @@ fun ChatFinNavGraph(navController: NavHostController) {
                     onNavigateBack  = { navController.popBackStack() },
                     onNavigateToAdd = { navController.navigate(Screen.Chat.route) }
                 )
+            }
+            composable(
+                route     = Screen.TransactionForm.route,
+                arguments = listOf(navArgument("transactionId") {
+                    type         = NavType.StringType
+                    defaultValue = "new"
+                })
+            ) {
+                TransactionFormScreen(onNavigateBack = { navController.popBackStack() })
             }
             composable(
                 route     = Screen.TransactionDetail.route,
@@ -166,9 +223,9 @@ fun ChatFinNavGraph(navController: NavHostController) {
             }
 
             // ── Setelan sub-halaman ────────────────────────────────────────────
-            composable(Screen.SettingsTheme.route)   { PlaceholderScreen("Tema") }
-            composable(Screen.SettingsBackup.route)  { PlaceholderScreen("Backup & Restore") }
-            composable(Screen.SettingsAbout.route)   { PlaceholderScreen("Tentang ChatFin") }
+            composable(Screen.SettingsTheme.route)  { PlaceholderScreen("Tema") }
+            composable(Screen.SettingsBackup.route) { PlaceholderScreen("Backup & Restore") }
+            composable(Screen.SettingsAbout.route)  { PlaceholderScreen("Tentang ChatFin") }
 
             // ── Placeholder fitur mendatang ────────────────────────────────────
             composable(Screen.Analytics.route)       { PlaceholderScreen("Analitik") }

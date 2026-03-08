@@ -19,9 +19,9 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        maven { url = uri("https://jitpack.io") }  // ← di sini
     }
 }
 
 rootProject.name = "ChatFin"
 include(":app")
- 
