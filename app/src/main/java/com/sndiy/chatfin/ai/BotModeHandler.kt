@@ -9,10 +9,10 @@ import javax.inject.Singleton
 
 sealed class BotStep {
     object Idle : BotStep()
-    data class WaitAmount(val type: String)                                                          : BotStep()
-    data class WaitCategory(val type: String, val amount: Long)                                      : BotStep()
-    data class WaitWallet(val type: String, val amount: Long, val category: String)                  : BotStep()
-    data class WaitDesc(val type: String, val amount: Long, val category: String, val wallet: String): BotStep()
+    data class WaitAmount(val type: String) : BotStep()
+    data class WaitCategory(val type: String, val amount: Long) : BotStep()
+    data class WaitWallet(val type: String, val amount: Long, val category: String) : BotStep()
+    data class WaitDesc(val type: String, val amount: Long, val category: String, val wallet: String) : BotStep()
     data class WaitConfirm(
         val type: String, val amount: Long,
         val category: String, val wallet: String, val desc: String
@@ -23,7 +23,17 @@ data class BotResult(
     val text: String,
     val option: ChatOption?           = null,
     val saveTransaction: SaveRequest? = null,
-    val nextStep: BotStep             = BotStep.Idle
+    val nextStep: BotStep             = BotStep.Idle,
+    // Signal ke ViewModel: minta AI buat kalimat konfirmasi
+    val requestAiConfirm: AiConfirmRequest? = null
+)
+
+data class AiConfirmRequest(
+    val type: String,
+    val amount: Long,
+    val category: String,
+    val wallet: String,
+    val desc: String
 )
 
 data class SaveRequest(
@@ -106,10 +116,7 @@ class BotModeHandler @Inject constructor() {
             is BotStep.WaitAmount -> {
                 val amount = parseAmount(input)
                 if (amount == null) {
-                    BotResult(
-                        "Nominal tidak valid 🤔\nContoh: 50000 · 50rb · 50k · 1.5jt",
-                        nextStep = step
-                    )
+                    BotResult("Nominal tidak valid 🤔\nContoh: 50000 · 50rb · 50k · 1.5jt", nextStep = step)
                 } else {
                     val cats = if (step.type == "INCOME") incomeCategories else expenseCategories
                     askCategory(step.type, amount, cats)
@@ -119,28 +126,37 @@ class BotModeHandler @Inject constructor() {
             is BotStep.WaitCategory -> {
                 val cats = if (step.type == "INCOME") incomeCategories else expenseCategories
                 val cat  = cats.find { it.name.equals(input, ignoreCase = true) }
+                    ?: cats.find { it.name.contains(input, ignoreCase = true) }
+                    ?: cats.find { input.contains(it.name, ignoreCase = true) }
                 if (cat == null) askCategory(step.type, step.amount, cats, invalid = true)
                 else askWallet(step.type, step.amount, cat.name, wallets)
             }
 
             is BotStep.WaitWallet -> {
                 val wallet = wallets.find { it.name.equals(input, ignoreCase = true) }
+                    ?: wallets.find { it.name.contains(input, ignoreCase = true) }
+                    ?: wallets.find { input.contains(it.name, ignoreCase = true) }
                 if (wallet == null) askWallet(step.type, step.amount, step.category, wallets, invalid = true)
                 else BotResult(
-                    "📝 Tambahkan judul? (ketik judul atau *skip*)",
+                    text     = "Judul transaksi? (atau ketik *skip*)",
                     nextStep = BotStep.WaitDesc(step.type, step.amount, step.category, wallet.name)
                 )
             }
 
             is BotStep.WaitDesc -> {
-                val desc = if (input.lowercase() == "skip") "" else input
-                showConfirm(step.type, step.amount, step.category, step.wallet, desc)
+                val desc = if (input.lowercase() in listOf("skip", "-", "lewati", "")) "" else input
+                // Semua data lengkap → minta AI buat konfirmasi
+                BotResult(
+                    text             = "",
+                    nextStep         = BotStep.WaitConfirm(step.type, step.amount, step.category, step.wallet, desc),
+                    requestAiConfirm = AiConfirmRequest(step.type, step.amount, step.category, step.wallet, desc)
+                )
             }
 
             is BotStep.WaitConfirm -> {
                 when (input.lowercase().trim()) {
                     "ya", "y", "iya", "yes", "ok", "oke", "simpan" -> BotResult(
-                        "✅ Tersimpan!",
+                        text            = "✅ Tersimpan!",
                         saveTransaction = SaveRequest(
                             type         = step.type,
                             amount       = step.amount,
@@ -151,11 +167,11 @@ class BotModeHandler @Inject constructor() {
                         nextStep = BotStep.Idle
                     )
                     "tidak", "batal", "cancel", "no", "n" -> BotResult(
-                        "❌ Dibatalkan.",
+                        text     = "❌ Dibatalkan.",
                         nextStep = BotStep.Idle
                     )
                     else -> BotResult(
-                        "Ketik *ya* untuk simpan atau *tidak* untuk batal.",
+                        text     = "Ketik *ya* untuk simpan atau *tidak* untuk batal.",
                         nextStep = step
                     )
                 }
@@ -174,7 +190,7 @@ class BotModeHandler @Inject constructor() {
             BotResult("${prefix}Belum ada kategori. Tambahkan dulu di Setelan.", nextStep = BotStep.Idle)
         } else {
             BotResult(
-                "${prefix}${rp(amount)} — pilih kategori:",
+                text     = "${prefix}${rp(amount)} — pilih kategori:",
                 option   = ChatOption.CategoryOptions(cats.map { it.name }),
                 nextStep = BotStep.WaitCategory(type, amount)
             )
@@ -190,27 +206,11 @@ class BotModeHandler @Inject constructor() {
             BotResult("${prefix}Belum ada dompet.", nextStep = BotStep.Idle)
         } else {
             BotResult(
-                "${prefix}Pilih dompet:",
+                text     = "${prefix}Oke, *$category*. Pilih dompet:",
                 option   = ChatOption.WalletOptions(wallets.map { it.name }),
                 nextStep = BotStep.WaitWallet(type, amount, category)
             )
         }
-    }
-
-    private fun showConfirm(
-        type: String, amount: Long,
-        category: String, wallet: String, desc: String
-    ): BotResult {
-        val typeLabel = if (type == "INCOME") "Pemasukan" else "Pengeluaran"
-        val descLine  = if (desc.isNotBlank()) "\n📋 Judul    : $desc" else ""
-        return BotResult(
-            text = "📋 *Konfirmasi $typeLabel*\n\n" +
-                    "💰 Nominal  : ${rp(amount)}\n" +
-                    "🏷️ Kategori : $category\n" +
-                    "👛 Dompet   : $wallet$descLine\n\n" +
-                    "Ketik *ya* untuk simpan atau *tidak* untuk batal.",
-            nextStep = BotStep.WaitConfirm(type, amount, category, wallet, desc)
-        )
     }
 
     private fun helpMessage() = BotResult(

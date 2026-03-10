@@ -5,8 +5,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
@@ -18,13 +16,24 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.*
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import com.sndiy.chatfin.core.data.local.entity.CategoryEntity
 import com.sndiy.chatfin.core.data.local.entity.TransactionEntity
+import com.sndiy.chatfin.core.ui.theme.ExpenseRed
+import com.sndiy.chatfin.core.ui.theme.IncomeGreen
 import java.text.NumberFormat
 import java.util.Locale
+
+private enum class TxFilter(val label: String) {
+    ALL("Semua"), INCOME("Pemasukan"), EXPENSE("Pengeluaran")
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -35,17 +44,19 @@ fun TransactionListScreen(
 ) {
     val listState         by viewModel.listState.collectAsStateWithLifecycle()
     val formState         by viewModel.formState.collectAsStateWithLifecycle()
-    val snackbarHostState  = remember { SnackbarHostState() }
+    val snackbarHostState = remember { SnackbarHostState() }
 
     var transactionToDelete by remember { mutableStateOf<TransactionEntity?>(null) }
     var showEditSheet       by remember { mutableStateOf(false) }
+    var activeFilter        by remember { mutableStateOf(TxFilter.ALL) }
+    var visibleCount        by remember { mutableIntStateOf(10) }
+    var searchQuery         by remember { mutableStateOf("") }
+    var isSearchActive      by remember { mutableStateOf(false) }
 
-    // Tutup sheet dan reset form setelah saved
+    LaunchedEffect(activeFilter, searchQuery) { visibleCount = 10 }
+
     LaunchedEffect(formState.isSaved) {
-        if (formState.isSaved) {
-            showEditSheet = false
-            viewModel.resetForm()
-        }
+        if (formState.isSaved) { showEditSheet = false; viewModel.resetForm() }
     }
 
     LaunchedEffect(listState.errorMessage, listState.successMessage) {
@@ -53,54 +64,199 @@ fun TransactionListScreen(
         listState.successMessage?.let { snackbarHostState.showSnackbar(it); viewModel.clearMessages() }
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Riwayat Transaksi") },
-                navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Kembali")
+    val allCategories = listState.expenseCategories + listState.incomeCategories
+
+    val filteredTx = remember(listState.transactions, activeFilter, searchQuery) {
+        listState.transactions
+            .let { list ->
+                when (activeFilter) {
+                    TxFilter.ALL     -> list
+                    TxFilter.INCOME  -> list.filter { it.type == "INCOME" }
+                    TxFilter.EXPENSE -> list.filter { it.type == "EXPENSE" }
+                }
+            }
+            .let { list ->
+                if (searchQuery.isBlank()) list
+                else {
+                    val q = searchQuery.trim().lowercase()
+                    list.filter { tx ->
+                        tx.note?.lowercase()?.contains(q) == true ||
+                                allCategories.find { it.id == tx.categoryId }
+                                    ?.name?.lowercase()?.contains(q) == true ||
+                                listState.wallets.find { it.id == tx.walletId }
+                                    ?.name?.lowercase()?.contains(q) == true ||
+                                tx.amount.toString().contains(q)
                     }
                 }
-            )
+            }
+    }
+
+    val visibleTx      = filteredTx.take(visibleCount)
+    val hasMore        = filteredTx.size > visibleCount
+    val remainingCount = (filteredTx.size - visibleCount).coerceAtLeast(0)
+
+    Scaffold(
+        topBar = {
+            if (isSearchActive) {
+                SearchTopBar(
+                    query         = searchQuery,
+                    onQueryChange = { searchQuery = it },
+                    onClose       = { isSearchActive = false; searchQuery = "" }
+                )
+            } else {
+                TopAppBar(
+                    title = { Text("Riwayat", fontWeight = FontWeight.Bold) },
+                    navigationIcon = {
+                        IconButton(onClick = onNavigateBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, "Kembali")
+                        }
+                    },
+                    actions = {
+                        IconButton(onClick = { isSearchActive = true }) {
+                            Icon(Icons.Default.Search, "Cari")
+                        }
+                    }
+                )
+            }
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
-        if (listState.transactions.isEmpty()) {
-            EmptyTransactionState(modifier = Modifier.padding(padding), onAdd = onNavigateToAdd)
-        } else {
-            LazyColumn(
-                modifier            = Modifier.padding(padding),
-                contentPadding      = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                val grouped = listState.transactions.groupBy { it.date }
-                grouped.forEach { (date, txList) ->
-                    item {
-                        Text(
-                            text     = formatDateHeader(date),
-                            style    = MaterialTheme.typography.labelLarge,
-                            color    = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(vertical = 4.dp)
-                        )
-                    }
-                    items(txList, key = { it.id }) { transaction ->
-                        val category = (listState.expenseCategories + listState.incomeCategories)
-                            .find { it.id == transaction.categoryId }
-                        val wallet = listState.wallets.find { it.id == transaction.walletId }
-                        TransactionItem(
-                            transaction = transaction,
-                            category    = category,
-                            walletName  = wallet?.name ?: "-",
-                            onEdit      = {
-                                viewModel.loadForEdit(transaction)
-                                showEditSheet = true
+        LazyColumn(
+            modifier            = Modifier.fillMaxSize().padding(padding),
+            contentPadding      = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            // ── Filter chips ──────────────────────────────────────────────────
+            item {
+                Row(
+                    modifier              = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment     = Alignment.CenterVertically
+                ) {
+                    TxFilter.entries.forEach { filter ->
+                        FilterChip(
+                            selected = activeFilter == filter,
+                            onClick  = { activeFilter = filter },
+                            label    = {
+                                val count = when (filter) {
+                                    TxFilter.ALL     -> listState.transactions.size
+                                    TxFilter.INCOME  -> listState.transactions.count { it.type == "INCOME" }
+                                    TxFilter.EXPENSE -> listState.transactions.count { it.type == "EXPENSE" }
+                                }
+                                Text("${filter.label} ($count)", style = MaterialTheme.typography.labelMedium)
                             },
-                            onDelete    = { transactionToDelete = transaction }
+                            leadingIcon = when (filter) {
+                                TxFilter.ALL     -> null
+                                TxFilter.INCOME  -> { { Icon(Icons.Default.TrendingUp,   null, Modifier.size(14.dp), tint = IncomeGreen) } }
+                                TxFilter.EXPENSE -> { { Icon(Icons.Default.TrendingDown, null, Modifier.size(14.dp), tint = ExpenseRed)  } }
+                            }
                         )
                     }
                 }
             }
+
+            // ── List transaksi / empty state ──────────────────────────────────
+            if (filteredTx.isEmpty()) {
+                if (searchQuery.isNotBlank()) {
+                    item {
+                        Box(
+                            Modifier.fillMaxWidth().padding(vertical = 48.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.SearchOff, null,
+                                    Modifier.size(64.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    "Tidak ditemukan",
+                                    style = MaterialTheme.typography.titleMedium
+                                )
+                                Text(
+                                    "Tidak ada transaksi yang cocok\ndengan \"$searchQuery\"",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    item { EmptyTransactionState(onAdd = onNavigateToAdd) }
+                }
+            } else {
+                // Tampilkan jumlah hasil saat search aktif
+                if (searchQuery.isNotBlank()) {
+                    item {
+                        Text(
+                            "${filteredTx.size} hasil untuk \"$searchQuery\"",
+                            style    = MaterialTheme.typography.labelMedium,
+                            color    = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(vertical = 4.dp)
+                        )
+                    }
+                }
+
+                val grouped = visibleTx.groupBy { it.date }
+                grouped.forEach { (date, txList) ->
+                    item(key = "header_$date") {
+                        Text(
+                            text       = formatDateHeader(date),
+                            style      = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color      = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier   = Modifier.padding(top = 8.dp, bottom = 2.dp)
+                        )
+                    }
+                    items(txList, key = { it.id }) { transaction ->
+                        val category = allCategories.find { it.id == transaction.categoryId }
+                        val wallet   = listState.wallets.find { it.id == transaction.walletId }
+                        TransactionItem(
+                            transaction  = transaction,
+                            category     = category,
+                            walletName   = wallet?.name ?: "-",
+                            searchQuery  = searchQuery,
+                            onEdit       = { viewModel.loadForEdit(transaction); showEditSheet = true },
+                            onDelete     = { transactionToDelete = transaction }
+                        )
+                    }
+                }
+
+                // ── Show more ─────────────────────────────────────────────────
+                if (hasMore) {
+                    item(key = "show_more") {
+                        OutlinedButton(
+                            onClick  = { visibleCount += 10 },
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                        ) {
+                            Icon(Icons.Default.ExpandMore, null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                "Tampilkan ${minOf(10, remainingCount)} lagi  •  sisa $remainingCount transaksi",
+                                style = MaterialTheme.typography.labelMedium
+                            )
+                        }
+                    }
+                } else if (filteredTx.size > 10) {
+                    item(key = "all_shown") {
+                        Box(
+                            Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                "Semua ${filteredTx.size} transaksi ditampilkan",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+
+            item { Spacer(Modifier.height(16.dp)) }
         }
     }
 
@@ -143,7 +299,52 @@ fun TransactionListScreen(
     }
 }
 
-// ── Bottom sheet konten edit ──────────────────────────────────────────────────
+// ── Search top bar ────────────────────────────────────────────────────────────
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SearchTopBar(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    onClose: () -> Unit
+) {
+    val focusRequester = remember { FocusRequester() }
+    LaunchedEffect(Unit) { focusRequester.requestFocus() }
+
+    TopAppBar(
+        navigationIcon = {
+            IconButton(onClick = onClose) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, "Tutup pencarian")
+            }
+        },
+        title = {
+            OutlinedTextField(
+                value         = query,
+                onValueChange = onQueryChange,
+                placeholder   = { Text("Judul, kategori, dompet, nominal...") },
+                singleLine    = true,
+                modifier      = Modifier
+                    .fillMaxWidth()
+                    .focusRequester(focusRequester),
+                shape  = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+                ),
+                trailingIcon = {
+                    if (query.isNotBlank()) {
+                        IconButton(onClick = { onQueryChange("") }) {
+                            Icon(Icons.Default.Clear, "Hapus")
+                        }
+                    }
+                }
+            )
+        }
+    )
+}
+
+// ── Edit sheet ────────────────────────────────────────────────────────────────
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun EditTransactionSheet(
     formState: TransactionFormState,
@@ -158,7 +359,6 @@ private fun EditTransactionSheet(
     onDismiss: () -> Unit
 ) {
     val categories = if (formState.type == TransactionType.INCOME) incomeCategories else expenseCategories
-
     Column(
         modifier            = Modifier
             .fillMaxWidth()
@@ -172,27 +372,20 @@ private fun EditTransactionSheet(
             verticalAlignment     = Alignment.CenterVertically
         ) {
             Text("Edit Transaksi", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            IconButton(onClick = onDismiss) {
-                Icon(Icons.Default.Close, contentDescription = "Tutup")
-            }
+            IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, null) }
         }
-
         HorizontalDivider()
-
-        // Nominal
         OutlinedTextField(
-            value         = formState.amount,
-            onValueChange = onAmountChange,
-            label         = { Text("Nominal") },
-            prefix        = { Text("Rp ") },
-            isError       = formState.amountError != null,
-            supportingText = formState.amountError?.let { { Text(it) } },
+            value           = formState.amount,
+            onValueChange   = onAmountChange,
+            label           = { Text("Nominal") },
+            prefix          = { Text("Rp ") },
+            isError         = formState.amountError != null,
+            supportingText  = formState.amountError?.let { { Text(it) } },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-            singleLine    = true,
-            modifier      = Modifier.fillMaxWidth()
+            singleLine      = true,
+            modifier        = Modifier.fillMaxWidth()
         )
-
-        // Judul/Note
         OutlinedTextField(
             value         = formState.note,
             onValueChange = onNoteChange,
@@ -200,16 +393,11 @@ private fun EditTransactionSheet(
             singleLine    = true,
             modifier      = Modifier.fillMaxWidth()
         )
-
-        // Pilih Kategori
         Text("Kategori", style = MaterialTheme.typography.labelMedium)
-        androidx.compose.foundation.lazy.LazyRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             items(categories) { cat ->
-                val selected = formState.selectedCategory?.id == cat.id
                 FilterChip(
-                    selected = selected,
+                    selected = formState.selectedCategory?.id == cat.id,
                     onClick  = { onCategorySelect(cat) },
                     label    = { Text(cat.name) }
                 )
@@ -218,112 +406,119 @@ private fun EditTransactionSheet(
         formState.categoryError?.let {
             Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall)
         }
-
-        // Pilih Dompet
         Text("Dompet", style = MaterialTheme.typography.labelMedium)
-        androidx.compose.foundation.lazy.LazyRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            items(wallets) { wallet ->
-                val selected = formState.selectedWallet?.id == wallet.id
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(wallets) { w ->
                 FilterChip(
-                    selected = selected,
-                    onClick  = { onWalletSelect(wallet) },
-                    label    = { Text(wallet.name) }
+                    selected = formState.selectedWallet?.id == w.id,
+                    onClick  = { onWalletSelect(w) },
+                    label    = { Text(w.name) }
                 )
             }
         }
         formState.walletError?.let {
             Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall)
         }
-
         Button(
             onClick  = onSave,
             enabled  = !formState.isLoading,
             modifier = Modifier.fillMaxWidth()
         ) {
-            if (formState.isLoading) {
-                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-            } else {
-                Text("Simpan Perubahan")
-            }
+            if (formState.isLoading) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+            else Text("Simpan Perubahan")
         }
     }
 }
 
-// ── Item transaksi ────────────────────────────────────────────────────────────
+// ── Transaction item ──────────────────────────────────────────────────────────
+
 @Composable
 private fun TransactionItem(
     transaction: TransactionEntity,
     category: CategoryEntity?,
     walletName: String,
+    searchQuery: String = "",
     onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
     val isIncome   = transaction.type == "INCOME"
     val isTransfer = transaction.type == "TRANSFER"
-    val amountColor  = when {
-        isIncome   -> Color(0xFF1B8A4C)
+    val amountColor = when {
+        isIncome   -> IncomeGreen
         isTransfer -> MaterialTheme.colorScheme.primary
         else       -> MaterialTheme.colorScheme.error
     }
-    val amountPrefix = when { isIncome -> "+ "; isTransfer -> ""; else -> "- " }
+    val amountPrefix = when {
+        isIncome   -> "+ "
+        isTransfer -> ""
+        else       -> "- "
+    }
     val categoryColor = category?.colorHex?.let {
         runCatching { Color(android.graphics.Color.parseColor(it)) }.getOrElse { Color.Gray }
     } ?: Color.Gray
-
     var showMenu by remember { mutableStateOf(false) }
 
-    Card(modifier = Modifier.fillMaxWidth()) {
+    // Highlight warna jika item ini cocok dengan query
+    val isHighlighted = searchQuery.isNotBlank()
+    val cardColor = if (isHighlighted)
+        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+    else
+        MaterialTheme.colorScheme.surface
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors   = CardDefaults.cardColors(containerColor = cardColor)
+    ) {
         Row(
-            modifier              = Modifier.fillMaxWidth().padding(12.dp),
+            modifier              = Modifier.fillMaxWidth().padding(14.dp),
             verticalAlignment     = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+            horizontalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             Box(
-                modifier         = Modifier.size(40.dp).clip(CircleShape).background(categoryColor),
+                modifier         = Modifier.size(48.dp).clip(CircleShape).background(categoryColor),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text       = if (isTransfer) "↔" else category?.name?.take(1) ?: "?",
+                    if (isTransfer) "↔" else category?.name?.take(1) ?: "?",
+                    style      = MaterialTheme.typography.titleMedium,
                     color      = Color.White,
                     fontWeight = FontWeight.Bold
                 )
             }
-
-            Column(modifier = Modifier.weight(1f)) {
-                // Judul: note kalau ada, fallback ke nama kategori
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Text(
-                    text       = transaction.note?.takeIf { it.isNotBlank() }
+                    transaction.note?.takeIf { it.isNotBlank() }
                         ?: if (isTransfer) "Transfer" else category?.name ?: "?",
-                    style      = MaterialTheme.typography.bodyMedium,
+                    style      = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.SemiBold,
-                    maxLines   = 1
+                    maxLines   = 1,
+                    overflow   = TextOverflow.Ellipsis
                 )
                 Text(
-                    text  = buildString {
+                    buildString {
                         append(if (isTransfer) "Transfer" else category?.name ?: "?")
-                        append(" · ")
-                        append(walletName)
-                        append(" · ")
-                        append(transaction.time)
+                        append(" · "); append(walletName)
+                        append(" · "); append(transaction.time)
                     },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1
+                    style    = MaterialTheme.typography.bodySmall,
+                    color    = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
-
-            Column(horizontalAlignment = Alignment.End) {
+            Column(
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
                 Text(
-                    text       = "$amountPrefix Rp ${NumberFormat.getNumberInstance(Locale("id","ID")).format(transaction.amount)}",
+                    "$amountPrefix Rp ${NumberFormat.getNumberInstance(Locale("id", "ID")).format(transaction.amount)}",
                     style      = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.SemiBold,
+                    fontWeight = FontWeight.Bold,
                     color      = amountColor
                 )
                 Box {
-                    IconButton(onClick = { showMenu = true }, modifier = Modifier.size(24.dp)) {
-                        Icon(Icons.Default.MoreVert, null, modifier = Modifier.size(16.dp))
+                    IconButton(onClick = { showMenu = true }, modifier = Modifier.size(28.dp)) {
+                        Icon(Icons.Default.MoreVert, null, Modifier.size(18.dp))
                     }
                     DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
                         DropdownMenuItem(
@@ -343,30 +538,40 @@ private fun TransactionItem(
     }
 }
 
+// ── Empty state ───────────────────────────────────────────────────────────────
+
 @Composable
-private fun EmptyTransactionState(modifier: Modifier = Modifier, onAdd: () -> Unit) {
-    Column(
-        modifier            = modifier.fillMaxSize(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+private fun EmptyTransactionState(onAdd: () -> Unit) {
+    Box(
+        Modifier.fillMaxWidth().padding(vertical = 48.dp),
+        contentAlignment = Alignment.Center
     ) {
-        Icon(Icons.Default.ReceiptLong, null, modifier = Modifier.size(72.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.height(16.dp))
-        Text("Belum ada transaksi", style = MaterialTheme.typography.titleMedium)
-        Text("Chat dengan Mai untuk mencatat transaksi", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.height(24.dp))
-        Button(onClick = onAdd) {
-            Icon(Icons.Default.Chat, null)
-            Spacer(Modifier.width(8.dp))
-            Text("Chat dengan Mai")
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Icon(Icons.Default.ReceiptLong, null, Modifier.size(64.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Belum ada transaksi", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "Chat dengan Mai untuk mencatat transaksi",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Button(onClick = onAdd) {
+                Icon(Icons.Default.Chat, null)
+                Spacer(Modifier.width(8.dp))
+                Text("Chat dengan Mai")
+            }
         }
     }
 }
 
+// ── Helper ────────────────────────────────────────────────────────────────────
+
 private fun formatDateHeader(date: String): String {
     return try {
         val parts  = date.split("-")
-        val months = listOf("","Jan","Feb","Mar","Apr","Mei","Jun","Jul","Agu","Sep","Okt","Nov","Des")
+        val months = listOf("", "Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des")
         "${parts[2]} ${months[parts[1].toInt()]} ${parts[0]}"
     } catch (e: Exception) { date }
 }

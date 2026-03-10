@@ -105,6 +105,26 @@ fun WalletListScreen(
             }
         }
     }
+
+    // ── Dialog konfirmasi hapus ────────────────────────────────────────────────
+    walletToDelete?.let { wallet ->
+        AlertDialog(
+            onDismissRequest = { walletToDelete = null },
+            title   = { Text("Hapus Dompet?") },
+            text    = { Text("\"${wallet.name}\" akan dihapus permanen.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.deleteWallet(wallet)
+                    walletToDelete = null
+                }) {
+                    Text("Hapus", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { walletToDelete = null }) { Text("Batal") }
+            }
+        )
+    }
 }
 
 // ── Card total saldo semua dompet ─────────────────────────────────────────────

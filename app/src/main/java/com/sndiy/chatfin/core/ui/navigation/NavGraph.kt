@@ -1,5 +1,6 @@
 package com.sndiy.chatfin.core.ui.navigation
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.*
@@ -17,16 +18,22 @@ import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.*
 import androidx.navigation.navArgument
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.sndiy.chatfin.feature.chat.ui.ChatViewModel
 import com.sndiy.chatfin.feature.chat.ui.ChatScreen
 import com.sndiy.chatfin.feature.finance.account.ui.AccountFormScreen
 import com.sndiy.chatfin.feature.finance.account.ui.AccountListScreen
+import com.sndiy.chatfin.feature.finance.analytics.ui.AnalyticsScreen
 import com.sndiy.chatfin.feature.finance.category.ui.CategoryScreen
 import com.sndiy.chatfin.feature.finance.dashboard.ui.DashboardScreen
 import com.sndiy.chatfin.feature.finance.transaction.ui.TransactionFormScreen
 import com.sndiy.chatfin.feature.finance.transaction.ui.TransactionListScreen
 import com.sndiy.chatfin.feature.finance.transaction.ui.WalletFormScreen
 import com.sndiy.chatfin.feature.finance.transaction.ui.WalletListScreen
+import com.sndiy.chatfin.feature.settings.backup.BackupScreen
+import com.sndiy.chatfin.feature.settings.ui.AboutScreen
 import com.sndiy.chatfin.feature.settings.ui.SettingsScreen
+import com.sndiy.chatfin.feature.settings.ui.SettingsThemeScreen
 import com.sndiy.chatfin.feature.splash.ui.SplashScreen
 
 data class BottomNavItem(
@@ -42,7 +49,7 @@ private val bottomNavItems = listOf(
     BottomNavItem(Screen.Settings.route,        "Setelan",  Icons.Default.Settings),
 )
 
-private val bottomNavRoutes = bottomNavItems.map { it.route }
+private val bottomNavRoutes = bottomNavItems.map { it.route }.toSet()
 
 @Composable
 fun PlaceholderScreen(name: String) {
@@ -67,10 +74,25 @@ fun PlaceholderScreen(name: String) {
 }
 
 @Composable
-fun ChatFinNavGraph(navController: NavHostController) {
+fun ChatFinNavGraph(
+    navController: NavHostController,
+    onFinish: () -> Unit
+) {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute      = navBackStackEntry?.destination?.route
     val showBottomBar     = currentRoute in bottomNavRoutes
+    val isOnBottomNav     = currentRoute in bottomNavRoutes
+    val chatViewModel: ChatViewModel = hiltViewModel()
+
+    BackHandler(enabled = isOnBottomNav) {
+        when (currentRoute) {
+            Screen.Dashboard.route -> onFinish()
+            else -> navController.navigate(Screen.Dashboard.route) {
+                popUpTo(Screen.Dashboard.route) { inclusive = false }
+                launchSingleTop = true
+            }
+        }
+    }
 
     Scaffold(
         bottomBar = {
@@ -101,28 +123,20 @@ fun ChatFinNavGraph(navController: NavHostController) {
             startDestination = Screen.Splash.route,
             modifier         = Modifier.padding(padding),
             enterTransition  = {
-                slideInHorizontally(
-                    initialOffsetX = { it },
-                    animationSpec  = tween(300)
-                ) + fadeIn(animationSpec = tween(300))
+                slideInHorizontally(initialOffsetX = { it }, animationSpec = tween(300)) +
+                        fadeIn(animationSpec = tween(300))
             },
             exitTransition   = {
-                slideOutHorizontally(
-                    targetOffsetX = { -it / 3 },
-                    animationSpec = tween(300)
-                ) + fadeOut(animationSpec = tween(300))
+                slideOutHorizontally(targetOffsetX = { -it / 3 }, animationSpec = tween(300)) +
+                        fadeOut(animationSpec = tween(300))
             },
             popEnterTransition = {
-                slideInHorizontally(
-                    initialOffsetX = { -it / 3 },
-                    animationSpec  = tween(300)
-                ) + fadeIn(animationSpec = tween(300))
+                slideInHorizontally(initialOffsetX = { -it / 3 }, animationSpec = tween(300)) +
+                        fadeIn(animationSpec = tween(300))
             },
             popExitTransition  = {
-                slideOutHorizontally(
-                    targetOffsetX = { it },
-                    animationSpec = tween(300)
-                ) + fadeOut(animationSpec = tween(300))
+                slideOutHorizontally(targetOffsetX = { it }, animationSpec = tween(300)) +
+                        fadeOut(animationSpec = tween(300))
             }
         ) {
             // ── Splash ─────────────────────────────────────────────────────────
@@ -137,7 +151,6 @@ fun ChatFinNavGraph(navController: NavHostController) {
                         }
                     },
                     onNavigateToOnboarding = {
-                        // Onboarding ditangani DashboardScreen via dialog
                         navController.navigate(Screen.Dashboard.route) {
                             popUpTo(Screen.Splash.route) { inclusive = true }
                         }
@@ -147,13 +160,19 @@ fun ChatFinNavGraph(navController: NavHostController) {
 
             // ── Bottom Nav ─────────────────────────────────────────────────────
             composable(Screen.Dashboard.route) {
-                DashboardScreen(
-                    onNavigateToChat = { navController.navigate(Screen.Chat.route) }
-                )
+                DashboardScreen(onNavigateToChat = { navController.navigate(Screen.Chat.route) })
             }
-            composable(Screen.Chat.route) { ChatScreen() }
+            composable(Screen.Chat.route) {
+                ChatScreen(viewModel = chatViewModel)
+            }
             composable(Screen.Settings.route) {
                 SettingsScreen(navController = navController)
+            }
+            composable(Screen.TransactionList.route) {
+                TransactionListScreen(
+                    onNavigateBack  = { navController.popBackStack() },
+                    onNavigateToAdd = { navController.navigate(Screen.Chat.route) }
+                )
             }
 
             // ── Akun ───────────────────────────────────────────────────────────
@@ -161,9 +180,7 @@ fun ChatFinNavGraph(navController: NavHostController) {
                 AccountListScreen(
                     onNavigateBack          = { navController.popBackStack() },
                     onNavigateToAddAccount  = { navController.navigate(Screen.AccountForm.createRoute()) },
-                    onNavigateToEditAccount = { id ->
-                        navController.navigate(Screen.AccountForm.createRoute(id))
-                    }
+                    onNavigateToEditAccount = { id -> navController.navigate(Screen.AccountForm.createRoute(id)) }
                 )
             }
             composable(
@@ -180,12 +197,6 @@ fun ChatFinNavGraph(navController: NavHostController) {
             }
 
             // ── Transaksi ──────────────────────────────────────────────────────
-            composable(Screen.TransactionList.route) {
-                TransactionListScreen(
-                    onNavigateBack  = { navController.popBackStack() },
-                    onNavigateToAdd = { navController.navigate(Screen.Chat.route) }
-                )
-            }
             composable(
                 route     = Screen.TransactionForm.route,
                 arguments = listOf(navArgument("transactionId") {
@@ -222,15 +233,21 @@ fun ChatFinNavGraph(navController: NavHostController) {
                 CategoryScreen(onNavigateBack = { navController.popBackStack() })
             }
 
-            // ── Setelan sub-halaman ────────────────────────────────────────────
-            composable(Screen.SettingsTheme.route)  { PlaceholderScreen("Tema") }
-            composable(Screen.SettingsBackup.route) { PlaceholderScreen("Backup & Restore") }
-            composable(Screen.SettingsAbout.route)  { PlaceholderScreen("Tentang ChatFin") }
+            // ── Analitik ───────────────────────────────────────────────────────
+            composable(Screen.Analytics.route) {
+                AnalyticsScreen(onNavigateBack = { navController.popBackStack() })
+            }
 
-            // ── Placeholder fitur mendatang ────────────────────────────────────
-            composable(Screen.Analytics.route)       { PlaceholderScreen("Analitik") }
-            composable(Screen.BudgetList.route)      { PlaceholderScreen("Budget") }
-            composable(Screen.SavingsGoalList.route) { PlaceholderScreen("Tabungan") }
+            // ── Setelan sub-halaman ────────────────────────────────────────────
+            composable(Screen.SettingsTheme.route) {
+                SettingsThemeScreen(onNavigateBack = { navController.popBackStack() })
+            }
+            composable(Screen.SettingsBackup.route) {
+                BackupScreen(onNavigateBack = { navController.popBackStack() })
+            }
+            composable(Screen.SettingsAbout.route) {
+                AboutScreen(onNavigateBack = { navController.popBackStack() })
+            }
         }
     }
 }

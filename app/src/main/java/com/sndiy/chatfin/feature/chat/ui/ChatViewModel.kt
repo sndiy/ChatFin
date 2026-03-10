@@ -353,9 +353,78 @@ class ChatViewModel @Inject constructor(
             totalBalance      = totalBalance
         )
         botStep = result.nextStep
+
         if (result.text == "__RANGKUMAN__") { handleRangkuman(); return }
         if (result.saveTransaction != null) saveBotTransaction(result.saveTransaction)
-        addMessage(UiMessage(role = "model", text = result.text, option = result.option))
+
+        // Kalau bot minta AI generate kalimat konfirmasi
+        if (result.requestAiConfirm != null) {
+            generateAiConfirm(result.requestAiConfirm)
+            return
+        }
+
+        if (result.text.isNotBlank() || result.option != null) {
+            addMessage(UiMessage(role = "model", text = result.text, option = result.option))
+        }
+    }
+
+    private fun generateAiConfirm(req: AiConfirmRequest) {
+        val confirmPrompt = systemPromptBuilder.buildConfirmPrompt(
+            userName = _uiState.value.activeAccount?.name ?: "Kamu",
+            type     = req.type,
+            amount   = req.amount,
+            category = req.category,
+            wallet   = req.wallet,
+            desc     = req.desc
+        )
+
+        _uiState.value = _uiState.value.copy(isTyping = true)
+        val loadingId = java.util.UUID.randomUUID().toString()
+        currentLoadingId = loadingId
+        addMessage(UiMessage(id = loadingId, role = "model", text = "", isLoading = true))
+
+        viewModelScope.launch {
+            val result = geminiRepo.sendMessage(
+                userMessage  = "Generate konfirmasi transaksi.",
+                chatHistory  = emptyList(), // fresh, tanpa history
+                systemPrompt = confirmPrompt
+            )
+            currentLoadingId = null
+            removeMessage(loadingId)
+            _uiState.value = _uiState.value.copy(isTyping = false)
+
+            result.fold(
+                onSuccess = { parsed ->
+                    addMessage(UiMessage(role = "model", text = parsed.text, option = parsed.option))
+                    if (parsed.option is ChatOption.TransactionConfirm) {
+                        preparePendingTransaction(parsed.option)
+                    }
+                },
+                onFailure = {
+                    // AI gagal → fallback ke teks bot biasa
+                    val fmt      = java.text.NumberFormat.getNumberInstance(java.util.Locale("id", "ID"))
+                    val typeLabel = if (req.type == "INCOME") "Pemasukan" else "Pengeluaran"
+                    val descLine  = if (req.desc.isNotBlank()) "\n📋 Judul    : ${req.desc}" else ""
+                    val fallback  = ChatOption.TransactionConfirm(
+                        type     = req.type,
+                        amount   = req.amount,
+                        category = req.category,
+                        wallet   = req.wallet,
+                        title    = req.desc.ifBlank { "${req.category} ${req.wallet}" }
+                    )
+                    addMessage(UiMessage(
+                        role   = "model",
+                        text   = "📋 *Konfirmasi $typeLabel*\n\n" +
+                                "💰 Nominal  : Rp ${fmt.format(req.amount)}\n" +
+                                "🏷️ Kategori : ${req.category}\n" +
+                                "👛 Dompet   : ${req.wallet}$descLine\n\n" +
+                                "Sudah benar?",
+                        option = fallback
+                    ))
+                    preparePendingTransaction(fallback)
+                }
+            )
+        }
     }
 
     private fun handleRangkuman() {
