@@ -252,7 +252,7 @@ fun DashboardScreen(
                     }
                     if (uiState.monthlyBarEntries.isNotEmpty()) {
                         item {
-                            AnalyticsCard("Pemasukan vs Pengeluaran (6 Bulan)") {
+                            AnalyticsCard("Pemasukan vs Pengeluaran (${uiState.selectedPeriod.label})") {
                                 MonthlyBarChart(uiState.monthlyBarEntries)
                             }
                         }

@@ -178,7 +178,7 @@ class DashboardViewModel @Inject constructor(
                         )
                     }
 
-                    val monthlyEntries = buildMonthlyEntries(raw.accountId)
+                    val monthlyEntries = buildMonthlyEntries(raw.accountId, _selectedPeriod.value)
 
                     _uiState.update {
                         it.copy(
@@ -195,10 +195,19 @@ class DashboardViewModel @Inject constructor(
         }
     }
 
-    private suspend fun buildMonthlyEntries(accountId: String): List<MonthlyBarEntry> {
-        val today = LocalDate.now()
+    private suspend fun buildMonthlyEntries(
+        accountId: String,
+        period: AnalyticsPeriod
+    ): List<MonthlyBarEntry> {
+        // Anchor = bulan terakhir dari period yang dipilih
+        val anchor = when (period) {
+            AnalyticsPeriod.THIS_MONTH    -> LocalDate.now()
+            AnalyticsPeriod.LAST_MONTH    -> LocalDate.now().minusMonths(1)
+            AnalyticsPeriod.LAST_3_MONTHS -> LocalDate.now()
+            AnalyticsPeriod.LAST_6_MONTHS -> LocalDate.now()
+        }
         return (5 downTo 0).map { i ->
-            val monthStart = today.minusMonths(i.toLong()).withDayOfMonth(1)
+            val monthStart = anchor.minusMonths(i.toLong()).withDayOfMonth(1)
             val monthEnd   = monthStart.plusMonths(1).minusDays(1)
             MonthlyBarEntry(
                 monthLabel = monthStart.format(monthShort),
