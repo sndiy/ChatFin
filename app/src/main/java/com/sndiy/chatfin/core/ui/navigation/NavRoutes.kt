@@ -2,8 +2,9 @@ package com.sndiy.chatfin.core.ui.navigation
 
 sealed class Screen(val route: String) {
 
-    // ── Splash ────────────────────────────────────────────────────────────────
+    // ── Splash & Initial ──────────────────────────────────────────────────────
     data object Splash : Screen("splash")
+    data object Auth   : Screen("auth")
 
     // ── Bottom Nav ────────────────────────────────────────────────────────────
     data object Chat            : Screen("chat")
@@ -66,4 +67,5 @@ sealed class Screen(val route: String) {
     data object SettingsBackup   : Screen("settings_backup")
     data object SettingsSecurity : Screen("settings_security")
     data object SettingsAbout    : Screen("settings_about")
+    data object SyncSettings    : Screen("sync_settings")
 }
