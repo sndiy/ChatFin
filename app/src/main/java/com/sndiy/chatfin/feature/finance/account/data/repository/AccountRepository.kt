@@ -1,12 +1,10 @@
 package com.sndiy.chatfin.feature.finance.account.data.repository
 
 import com.sndiy.chatfin.core.data.local.dao.AccountDao
-import com.sndiy.chatfin.core.data.local.dao.CategoryDao
 import com.sndiy.chatfin.core.data.local.dao.WalletDao
 import com.sndiy.chatfin.core.data.local.entity.FinanceAccountEntity
 import com.sndiy.chatfin.core.data.local.entity.WalletEntity
 import com.sndiy.chatfin.core.data.security.SecureStorage
-import com.sndiy.chatfin.core.data.local.DefaultCategories
 import kotlinx.coroutines.flow.Flow
 import java.util.UUID
 import javax.inject.Inject
@@ -16,7 +14,6 @@ import javax.inject.Singleton
 class AccountRepository @Inject constructor(
     private val accountDao: AccountDao,
     private val walletDao: WalletDao,
-    private val categoryDao: CategoryDao,
     private val secureStorage: SecureStorage
 ) {
     fun getAllAccounts(): Flow<List<FinanceAccountEntity>> =
@@ -60,7 +57,7 @@ class AccountRepository @Inject constructor(
                 sortOrder = 0
             )
         )
-        categoryDao.insertCategories(DefaultCategories.all)
+        // Seeding kategori default dilakukan di DatabaseModule.onCreate — tidak perlu di sini
         return accountId
     }
 

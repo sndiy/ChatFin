@@ -1,5 +1,3 @@
-// app/src/main/java/com/sndiy/chatfin/core/di/DatabaseModule.kt
-
 package com.sndiy.chatfin.core.di
 
 import android.content.Context
@@ -27,18 +25,18 @@ object DatabaseModule {
     fun provideChatFinDatabase(
         @ApplicationContext context: Context
     ): ChatFinDatabase {
-        // Referensi db di-hold dulu karena Callback butuh akses db
         var db: ChatFinDatabase? = null
 
         val callback = object : RoomDatabase.Callback() {
             override fun onCreate(sqLiteDb: SupportSQLiteDatabase) {
                 super.onCreate(sqLiteDb)
-                // Seed kategori default di background thread saat pertama install
+                // Seed kategori default SEKALI saat pertama install
                 CoroutineScope(Dispatchers.IO).launch {
                     db?.categoryDao()?.insertCategories(DefaultCategories.all)
                 }
             }
         }
+
         return Room.databaseBuilder(
             context,
             ChatFinDatabase::class.java,
@@ -54,6 +52,5 @@ object DatabaseModule {
     @Provides fun provideWalletDao(db: ChatFinDatabase)      = db.walletDao()
     @Provides fun provideCategoryDao(db: ChatFinDatabase)    = db.categoryDao()
     @Provides fun provideTransactionDao(db: ChatFinDatabase) = db.transactionDao()
-    @Provides fun provideBudgetDao(db: ChatFinDatabase)      = db.budgetDao()
-    @Provides fun provideSavingsGoalDao(db: ChatFinDatabase) = db.savingsGoalDao()
+    // provideBudgetDao & provideSavingsGoalDao dihapus
 }
