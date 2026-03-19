@@ -80,15 +80,15 @@ fun SettingsScreen(
                 onClick = { navController.navigate(Screen.SyncSettings.route) }
             )
             SettingsItem(
-                icon = Icons.Default.Backup,
+                icon = Icons.Default.SaveAlt,
                 title = "Backup & Restore",
-                subtitle = "Simpan data ke cloud",
+                subtitle = "Simpan data lokal ke file",
                 onClick = { navController.navigate(Screen.SettingsBackup.route) }
             )
             SettingsItem(
                 icon = Icons.Default.Info,
                 title = "Tentang ChatFin",
-                subtitle = "Versi 1.0.0",
+                subtitle = "Versi 1.3.0",
                 onClick = { navController.navigate(Screen.SettingsAbout.route) }
             )
         }

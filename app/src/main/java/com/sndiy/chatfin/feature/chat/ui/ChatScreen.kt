@@ -683,11 +683,12 @@ private fun TypingIndicatorBubble() {
 
 @Composable
 private fun ChatWelcomeState(accountName: String?, onQuickAction: (String) -> Unit) {
+    // FIX: label untuk tampilan, command untuk dikirim ke bot
     val quickActions = listOf(
-        "💰 Lihat saldo",
-        "📊 Ringkasan bulan ini",
-        "➕ Catat pemasukan",
-        "➖ Catat pengeluaran"
+        "💰 Lihat saldo"         to "saldo",
+        "📊 Ringkasan bulan ini" to "rangkuman",
+        "➕ Catat pemasukan"     to "setor",
+        "➖ Catat pengeluaran"   to "tarik"
     )
     val maiColor = Color(MAI_COLOR.toColorInt())
 
@@ -744,10 +745,10 @@ private fun ChatWelcomeState(accountName: String?, onQuickAction: (String) -> Un
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             quickActions.chunked(2).forEach { row ->
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    row.forEach { action ->
+                    row.forEach { (label, command) ->
                         SuggestionChip(
-                            onClick  = { onQuickAction(action.drop(2).trim()) },
-                            label    = { Text(action) },
+                            onClick  = { onQuickAction(command) }, // kirim command, bukan label
+                            label    = { Text(label) },
                             modifier = Modifier.weight(1f)
                         )
                     }

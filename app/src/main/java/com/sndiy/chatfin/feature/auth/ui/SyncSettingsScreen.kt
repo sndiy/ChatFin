@@ -18,6 +18,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 @Composable
 fun SyncSettingsScreen(
     onNavigateBack: () -> Unit,
+    onNavigateToAuth: () -> Unit,
     onLoggedOut: () -> Unit,
     viewModel: AuthViewModel = hiltViewModel()
 ) {
@@ -161,7 +162,7 @@ fun SyncSettingsScreen(
                             style     = MaterialTheme.typography.bodySmall,
                             color     = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        Button(onClick = onNavigateBack) {
+                        Button(onClick = onNavigateToAuth) {
                             Text("Login Sekarang")
                         }
                     }

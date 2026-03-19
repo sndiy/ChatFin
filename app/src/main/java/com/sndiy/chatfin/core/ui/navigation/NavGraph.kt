@@ -21,6 +21,8 @@ import androidx.navigation.navArgument
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.sndiy.chatfin.feature.chat.ui.ChatViewModel
 import com.sndiy.chatfin.feature.chat.ui.ChatScreen
+import com.sndiy.chatfin.feature.auth.ui.AuthScreen
+import com.sndiy.chatfin.feature.auth.ui.SyncSettingsScreen
 import com.sndiy.chatfin.feature.finance.account.ui.AccountFormScreen
 import com.sndiy.chatfin.feature.finance.account.ui.AccountListScreen
 import com.sndiy.chatfin.feature.finance.analytics.ui.AnalyticsScreen
@@ -247,6 +249,21 @@ fun ChatFinNavGraph(
             }
             composable(Screen.SettingsAbout.route) {
                 AboutScreen(onNavigateBack = { navController.popBackStack() })
+            }
+
+            // ── Auth & Sync ────────────────────────────────────────────────────────────
+            composable(Screen.Auth.route) {
+                AuthScreen(
+                    onAuthSuccess = { navController.popBackStack() },
+                    onSkip        = { navController.popBackStack() }
+                )
+            }
+            composable(Screen.SyncSettings.route) {
+                SyncSettingsScreen(
+                    onNavigateBack   = { navController.popBackStack() },
+                    onNavigateToAuth = { navController.navigate(Screen.Auth.route) },
+                    onLoggedOut      = { navController.popBackStack() }
+                )
             }
         }
     }
