@@ -6,6 +6,8 @@ import androidx.room.RoomDatabase
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.sndiy.chatfin.core.data.local.ChatFinDatabase
 import com.sndiy.chatfin.core.data.local.DefaultCategories
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestore
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -15,6 +17,19 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import javax.inject.Singleton
+
+@Module
+@InstallIn(SingletonComponent::class)
+object FirebaseModule {
+
+    @Provides
+    @Singleton
+    fun provideFirebaseAuth(): FirebaseAuth = FirebaseAuth.getInstance()
+
+    @Provides
+    @Singleton
+    fun provideFirestore(): FirebaseFirestore = FirebaseFirestore.getInstance()
+}
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -42,7 +57,6 @@ object DatabaseModule {
             ChatFinDatabase::class.java,
             "chatfin_database"
         )
-            .fallbackToDestructiveMigration()
             .addCallback(callback)
             .build()
             .also { db = it }

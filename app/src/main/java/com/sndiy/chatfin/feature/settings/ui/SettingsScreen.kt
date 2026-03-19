@@ -12,40 +12,50 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import com.sndiy.chatfin.core.ui.navigation.Screen
+import com.sndiy.chatfin.feature.auth.ui.AuthViewModel
 
 @Composable
-fun SettingsScreen(navController: NavController) {
+fun SettingsScreen(
+    navController: NavController,
+    authViewModel: AuthViewModel = hiltViewModel()
+) {
+    val authState by authViewModel.uiState.collectAsStateWithLifecycle()
+    val isLoggedIn = authState.currentUser != null
+    val userEmail  = authState.currentUser?.email ?: ""
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
     ) {
         Text(
-            text       = "Setelan",
-            style      = MaterialTheme.typography.headlineSmall,
+            text = "Setelan",
+            style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold,
-            modifier   = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
         )
 
         // ── Akun Keuangan ─────────────────────────────────────────────────────
         SettingsSection(title = "Akun Keuangan") {
             SettingsItem(
-                icon    = Icons.Default.AccountBalance,
-                title   = "Kelola Akun",
+                icon = Icons.Default.AccountBalance,
+                title = "Kelola Akun",
                 subtitle = "Tambah, edit, atau hapus akun",
                 onClick = { navController.navigate(Screen.AccountList.route) }
             )
             SettingsItem(
-                icon    = Icons.Default.AccountBalanceWallet,
-                title   = "Dompet & Rekening",
+                icon = Icons.Default.AccountBalanceWallet,
+                title = "Dompet & Rekening",
                 subtitle = "Atur dompet di akun aktif",
                 onClick = { navController.navigate(Screen.WalletList.route) }
             )
             SettingsItem(
-                icon    = Icons.Default.Category,
-                title   = "Kategori",
+                icon = Icons.Default.Category,
+                title = "Kategori",
                 subtitle = "Kelola kategori transaksi",
                 onClick = { navController.navigate(Screen.CategoryList.route) }
             )
@@ -54,8 +64,8 @@ fun SettingsScreen(navController: NavController) {
         // ── Tampilan ───────────────────────────────────────────────────────────
         SettingsSection(title = "Tampilan") {
             SettingsItem(
-                icon    = Icons.Default.Palette,
-                title   = "Tema",
+                icon = Icons.Default.Palette,
+                title = "Tema",
                 subtitle = "Atur warna dan tampilan app",
                 onClick = { navController.navigate(Screen.SettingsTheme.route) }
             )
@@ -64,14 +74,20 @@ fun SettingsScreen(navController: NavController) {
         // ── Lainnya ───────────────────────────────────────────────────────────
         SettingsSection(title = "Lainnya") {
             SettingsItem(
-                icon    = Icons.Default.Backup,
-                title   = "Backup & Restore",
+                icon = Icons.Default.CloudSync,
+                title = "Akun & Sinkronisasi",
+                subtitle = if (isLoggedIn) "Login sebagai $userEmail" else "Belum login",
+                onClick = { navController.navigate(Screen.SyncSettings.route) }
+            )
+            SettingsItem(
+                icon = Icons.Default.Backup,
+                title = "Backup & Restore",
                 subtitle = "Simpan data ke cloud",
                 onClick = { navController.navigate(Screen.SettingsBackup.route) }
             )
             SettingsItem(
-                icon    = Icons.Default.Info,
-                title   = "Tentang ChatFin",
+                icon = Icons.Default.Info,
+                title = "Tentang ChatFin",
                 subtitle = "Versi 1.0.0",
                 onClick = { navController.navigate(Screen.SettingsAbout.route) }
             )
@@ -85,9 +101,9 @@ fun SettingsScreen(navController: NavController) {
 private fun SettingsSection(title: String, content: @Composable () -> Unit) {
     Column {
         Text(
-            text     = title,
-            style    = MaterialTheme.typography.labelLarge,
-            color    = MaterialTheme.colorScheme.primary,
+            text = title,
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.primary,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
         )
         content()
@@ -104,14 +120,14 @@ private fun SettingsItem(
     onClick: () -> Unit
 ) {
     ListItem(
-        headlineContent   = { Text(title, style = MaterialTheme.typography.bodyLarge) },
+        headlineContent = { Text(title, style = MaterialTheme.typography.bodyLarge) },
         supportingContent = {
             Text(subtitle, style = MaterialTheme.typography.bodySmall, color = subtitleColor)
         },
-        leadingContent    = {
+        leadingContent = {
             Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
         },
-        trailingContent   = {
+        trailingContent = {
             Icon(
                 Icons.Default.ChevronRight,
                 contentDescription = null,
