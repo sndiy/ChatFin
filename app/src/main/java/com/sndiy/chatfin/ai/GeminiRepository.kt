@@ -19,7 +19,13 @@ class GeminiRepository @Inject constructor(
             val rawText = client.sendMessage(userMessage, chatHistory, systemPrompt)
             quotaRetryCount = 0
             android.util.Log.d("GeminiRepo", "OK dengan ${client.currentModelName}: ${rawText.take(200)}")
-            Result.success(parser.parse(rawText))
+            // Setelah sukses, kembalikan ke primary
+            Result.success(parser.parse(rawText)).also {
+                // Reset ke primary kalau sedang di fallback
+                if (client.currentModelName != "gemini-2.5-flash") {
+                    client.rotateModel() // rotate balik ke primary
+                }
+            }
         } catch (e: Exception) {
             when {
                 client.isQuotaError(e) -> {

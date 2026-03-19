@@ -87,7 +87,7 @@ interface TransactionDao {
     suspend fun getTransactionById(id: String): TransactionEntity?
 
     // Tambah transaksi baru
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertTransaction(transaction: TransactionEntity)
 
     // Update transaksi

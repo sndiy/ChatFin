@@ -74,12 +74,11 @@ class ChatViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(ChatUiState())
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
 
-    // State untuk loading awal cek koneksi
     private val _isCheckingNetwork = MutableStateFlow(true)
     val isCheckingNetwork: StateFlow<Boolean> = _isCheckingNetwork.asStateFlow()
 
-    private val chatHistory      = mutableListOf<Pair<String, String>>()
-    private var systemPrompt     = ""
+    private val chatHistory   = mutableListOf<Pair<String, String>>()
+    private var systemPrompt  = ""
     private var botStep: BotStep = BotStep.Idle
     private var generationJob: Job? = null
     private var retryJob: Job?      = null
@@ -87,9 +86,10 @@ class ChatViewModel @Inject constructor(
 
     private var lastUserMessage: String = ""
     private var lastHistorySnapshot: List<Pair<String, String>> = emptyList()
-
-    // Mencegah pesan notifikasi offline muncul lebih dari sekali berturut-turut
     private var hasShownOfflineMessage = false
+
+    // FIX Bug 2: batasi retry maksimal 1x per pesan
+    private var aiRetryCount = 0
 
     init {
         observeActiveAccount()
@@ -99,27 +99,24 @@ class ChatViewModel @Inject constructor(
     // ── Monitor jaringan ──────────────────────────────────────────────────────
     private fun observeNetwork() {
         viewModelScope.launch {
-            // Initial check
             _isCheckingNetwork.value = true
             val connected = networkMonitor.isCurrentlyConnected()
-            if (!connected) {
-                switchToOfflineMode()
-            }
+            if (!connected) switchToOfflineMode()
             _isCheckingNetwork.value = false
 
-            // Realtime monitor
             networkMonitor.isConnected.collect { isConnected ->
                 val currentStatus = _uiState.value.connectionStatus
                 if (!isConnected && currentStatus != ConnectionStatus.NO_INTERNET) {
-                    // Koneksi baru saja putus di tengah chat
                     generationJob?.cancel()
                     currentLoadingId?.let { removeMessage(it) }
                     currentLoadingId = null
                     _uiState.value = _uiState.value.copy(isTyping = false)
+                    // FIX Bug 1: rollback history yang belum dapat response
+                    if (chatHistory.lastOrNull()?.first == "user") {
+                        chatHistory.removeLastOrNull()
+                    }
                     switchToOfflineMode()
                 } else if (isConnected && currentStatus == ConnectionStatus.NO_INTERNET) {
-                    // Koneksi pulih — update banner tapi JANGAN otomatis keluar bot mode
-                    // Biarkan user tekan "Coba lagi" sendiri
                     hasShownOfflineMessage = false
                 }
             }
@@ -131,7 +128,10 @@ class ChatViewModel @Inject constructor(
             connectionStatus = ConnectionStatus.NO_INTERNET,
             isBotMode        = true
         )
-        botStep = BotStep.Idle
+        // FIX Bug 3: reset botStep saat masuk offline biar tidak stuck di tengah alur
+        if (botStep !is BotStep.Idle) {
+            botStep = BotStep.Idle
+        }
         if (!hasShownOfflineMessage) {
             hasShownOfflineMessage = true
             addMessage(UiMessage(
@@ -206,7 +206,10 @@ class ChatViewModel @Inject constructor(
         generationJob    = null
         currentLoadingId?.let { removeMessage(it) }
         currentLoadingId = null
-        if (chatHistory.lastOrNull()?.first == "user") chatHistory.removeLastOrNull()
+        // FIX Bug 1: rollback history kalau stop di tengah jalan
+        if (chatHistory.lastOrNull()?.first == "user") {
+            chatHistory.removeLastOrNull()
+        }
         _uiState.value = _uiState.value.copy(isTyping = false)
     }
 
@@ -214,15 +217,17 @@ class ChatViewModel @Inject constructor(
     fun retryAi() {
         if (_uiState.value.retryCountdown > 0) return
 
-        // Cek koneksi dulu sebelum retry
         if (!networkMonitor.isCurrentlyConnected()) {
-            // Masih tidak ada internet — mulai countdown tapi tetap di bot mode
             startRetryCountdown(10)
             return
         }
 
         startRetryCountdown(10)
         hasShownOfflineMessage = false
+        aiRetryCount = 0
+
+        // FIX Bug 3: pastikan botStep bersih saat keluar bot mode
+        botStep = BotStep.Idle
         _uiState.value = _uiState.value.copy(
             connectionStatus = ConnectionStatus.CONNECTED,
             isBotMode        = false
@@ -251,24 +256,34 @@ class ChatViewModel @Inject constructor(
         addMessage(UiMessage(role = "user", text = text))
         _uiState.value = _uiState.value.copy(inputText = "")
 
-        if (_uiState.value.isBotMode || botStep !is BotStep.Idle) {
+        // Kalau sedang di tengah alur bot → lanjutkan ke bot tanpa cek intent
+        if (botStep !is BotStep.Idle) {
             handleBotMode(text)
             return
         }
 
-        // Cek internet sebelum kirim ke AI
+        // Cek internet
         if (!networkMonitor.isCurrentlyConnected()) {
             switchToOfflineMode()
-            // Langsung proses sebagai bot command
             handleBotMode(text)
             return
         }
 
+        // Routing berdasarkan intent
+        if (isTransactionIntent(text)) {
+            handleBotMode(text)
+        } else {
+            sendToAi(text)
+        }
+    }
+
+    // ── Routing ke AI ─────────────────────────────────────────────────────────
+    private fun sendToAi(text: String) {
         val historySnapshot = chatHistory.toList()
-        chatHistory.add("user" to text)
+        // FIX Bug 1: tambah ke history SETELAH dapat response sukses, bukan sebelum
         lastUserMessage     = text
         lastHistorySnapshot = historySnapshot
-
+        aiRetryCount        = 0
         executeAiRequest(text, historySnapshot)
     }
 
@@ -296,13 +311,18 @@ class ChatViewModel @Inject constructor(
             result.fold(
                 onSuccess = { parsed ->
                     hasShownOfflineMessage = false
+                    aiRetryCount = 0
+                    // FIX Bug 1: baru masukkan ke history setelah sukses
+                    chatHistory.add("user" to text)
+                    chatHistory.add("model" to parsed.text)
                     _uiState.value = _uiState.value.copy(
                         connectionStatus = ConnectionStatus.CONNECTED,
                         activeModelName  = geminiClient.currentModelName
                     )
                     addMessage(UiMessage(role = "model", text = parsed.text, option = parsed.option))
-                    chatHistory.add("model" to parsed.text)
-                    if (parsed.option is ChatOption.TransactionConfirm) preparePendingTransaction(parsed.option)
+                    if (parsed.option is ChatOption.TransactionConfirm) {
+                        preparePendingTransaction(parsed.option)
+                    }
                 },
                 onFailure = { error ->
                     val isNoInternet = error.message?.contains("internet", ignoreCase = true) == true ||
@@ -310,24 +330,39 @@ class ChatViewModel @Inject constructor(
                             error.message?.contains("network", ignoreCase = true) == true
                     val isAllLimit = error is QuotaExhaustedException &&
                             error.message?.contains("semua") == true
+                    // FIX Bug 2: isOneLimit hanya retry 1x, bukan infinite
                     val isOneLimit = error is QuotaExhaustedException && !isAllLimit
 
                     when {
-                        isNoInternet -> switchToOfflineMode()
-                        isOneLimit -> {
-                            android.util.Log.d("ChatVM", "Model limit, silent retry dengan ${geminiClient.currentModelName}")
+                        isNoInternet -> {
+                            switchToOfflineMode()
+                        }
+                        isOneLimit && aiRetryCount < 1 -> {
+                            aiRetryCount++
+                            android.util.Log.d("ChatVM", "Model limit, retry ke-$aiRetryCount dengan ${geminiClient.currentModelName}")
                             _uiState.value = _uiState.value.copy(
                                 activeModelName = geminiClient.currentModelName,
                                 isTyping        = false
                             )
-                            executeAiRequest(lastUserMessage, lastHistorySnapshot)
+                            executeAiRequest(text, historySnapshot)
                         }
-                        isAllLimit -> {
-                            _uiState.value = _uiState.value.copy(connectionStatus = ConnectionStatus.QUOTA_LIMIT)
-                            addMessage(UiMessage(role = "model", text = "Semua model AI sedang limit.", isError = true))
+                        isOneLimit || isAllLimit -> {
+                            // Sudah retry atau semua model limit
+                            _uiState.value = _uiState.value.copy(
+                                connectionStatus = ConnectionStatus.QUOTA_LIMIT
+                            )
+                            addMessage(UiMessage(
+                                role    = "model",
+                                text    = "Semua model AI sedang limit.",
+                                isError = true
+                            ))
                         }
                         else -> {
-                            addMessage(UiMessage(role = "model", text = error.message ?: "Terjadi kesalahan", isError = true))
+                            addMessage(UiMessage(
+                                role    = "model",
+                                text    = error.message ?: "Terjadi kesalahan",
+                                isError = true
+                            ))
                         }
                     }
                 }
@@ -336,11 +371,19 @@ class ChatViewModel @Inject constructor(
     }
 
     fun switchToBotMode() {
-        _uiState.value = _uiState.value.copy(isBotMode = true, connectionStatus = ConnectionStatus.BOT_MODE)
-        addMessage(UiMessage(role = "model", text = "Mode Bot aktif. Ketik *help* untuk melihat perintah yang tersedia."))
+        botStep = BotStep.Idle // FIX Bug 3: pastikan state bersih
+        _uiState.value = _uiState.value.copy(
+            isBotMode        = true,
+            connectionStatus = ConnectionStatus.BOT_MODE
+        )
+        addMessage(UiMessage(
+            role = "model",
+            text = "Mode Bot aktif. Ketik *help* untuk melihat perintah yang tersedia."
+        ))
     }
 
     // ── Bot mode ──────────────────────────────────────────────────────────────
+    // FIX Bug 4: hapus kondisi kontradiktif, logika diperjelas
     private fun handleBotMode(input: String) {
         val state        = _uiState.value
         val totalBalance = state.wallets.sumOf { it.balance }
@@ -355,10 +398,16 @@ class ChatViewModel @Inject constructor(
         botStep = result.nextStep
 
         if (result.text == "__RANGKUMAN__") { handleRangkuman(); return }
-        if (result.saveTransaction != null) saveBotTransaction(result.saveTransaction)
 
-        // Kalau bot minta AI generate kalimat konfirmasi
+        // FIX Bug 7: hanya satu jalur simpan — via saveBotTransaction, bukan confirmTransaction
+        if (result.saveTransaction != null) {
+            saveBotTransaction(result.saveTransaction)
+            addMessage(UiMessage(role = "model", text = result.text))
+            return
+        }
+
         if (result.requestAiConfirm != null) {
+            botStep = BotStep.Idle
             generateAiConfirm(result.requestAiConfirm)
             return
         }
@@ -368,7 +417,33 @@ class ChatViewModel @Inject constructor(
         }
     }
 
+    // ── Generate AI confirm ───────────────────────────────────────────────────
     private fun generateAiConfirm(req: AiConfirmRequest) {
+        // FIX Bug 5: cek internet dulu sebelum panggil AI
+        if (!networkMonitor.isCurrentlyConnected()) {
+            val fmt       = java.text.NumberFormat.getNumberInstance(java.util.Locale("id", "ID"))
+            val typeLabel = if (req.type == "INCOME") "Pemasukan" else "Pengeluaran"
+            val descLine  = if (req.desc.isNotBlank()) "\n📋 Judul    : ${req.desc}" else ""
+            val fallback  = ChatOption.TransactionConfirm(
+                type     = req.type,
+                amount   = req.amount,
+                category = req.category,
+                wallet   = req.wallet,
+                title    = req.desc.ifBlank { "${req.category} ${req.wallet}" }
+            )
+            addMessage(UiMessage(
+                role   = "model",
+                text   = "📋 *Konfirmasi $typeLabel*\n\n" +
+                        "💰 Nominal  : Rp ${fmt.format(req.amount)}\n" +
+                        "🏷️ Kategori : ${req.category}\n" +
+                        "👛 Dompet   : ${req.wallet}$descLine\n\n" +
+                        "Sudah benar?",
+                option = fallback
+            ))
+            preparePendingTransaction(fallback)
+            return
+        }
+
         val confirmPrompt = systemPromptBuilder.buildConfirmPrompt(
             userName = _uiState.value.activeAccount?.name ?: "Kamu",
             type     = req.type,
@@ -379,14 +454,14 @@ class ChatViewModel @Inject constructor(
         )
 
         _uiState.value = _uiState.value.copy(isTyping = true)
-        val loadingId = java.util.UUID.randomUUID().toString()
+        val loadingId = UUID.randomUUID().toString()
         currentLoadingId = loadingId
         addMessage(UiMessage(id = loadingId, role = "model", text = "", isLoading = true))
 
         viewModelScope.launch {
             val result = geminiRepo.sendMessage(
                 userMessage  = "Generate konfirmasi transaksi.",
-                chatHistory  = emptyList(), // fresh, tanpa history
+                chatHistory  = emptyList(),
                 systemPrompt = confirmPrompt
             )
             currentLoadingId = null
@@ -395,14 +470,31 @@ class ChatViewModel @Inject constructor(
 
             result.fold(
                 onSuccess = { parsed ->
-                    addMessage(UiMessage(role = "model", text = parsed.text, option = parsed.option))
-                    if (parsed.option is ChatOption.TransactionConfirm) {
-                        preparePendingTransaction(parsed.option)
+                    // Sanitasi judul kalau AI tidak ganti placeholder
+                    val sanitizedOption = if (parsed.option is ChatOption.TransactionConfirm) {
+                        val opt = parsed.option
+                        if (opt.title.contains("GANTI_DENGAN_JUDUL", ignoreCase = true)) {
+                            opt.copy(title = req.desc.ifBlank { "${req.category} ${req.wallet}" })
+                        } else opt
+                    } else parsed.option
+
+                    addMessage(UiMessage(role = "model", text = parsed.text, option = sanitizedOption))
+                    if (sanitizedOption is ChatOption.TransactionConfirm) {
+                        preparePendingTransaction(sanitizedOption)
+                    } else {
+                        // AI respond tapi tidak kasih confirm option → fallback
+                        val fallback = ChatOption.TransactionConfirm(
+                            type     = req.type,
+                            amount   = req.amount,
+                            category = req.category,
+                            wallet   = req.wallet,
+                            title    = req.desc.ifBlank { "${req.category} ${req.wallet}" }
+                        )
+                        preparePendingTransaction(fallback)
                     }
                 },
                 onFailure = {
-                    // AI gagal → fallback ke teks bot biasa
-                    val fmt      = java.text.NumberFormat.getNumberInstance(java.util.Locale("id", "ID"))
+                    val fmt       = java.text.NumberFormat.getNumberInstance(java.util.Locale("id", "ID"))
                     val typeLabel = if (req.type == "INCOME") "Pemasukan" else "Pengeluaran"
                     val descLine  = if (req.desc.isNotBlank()) "\n📋 Judul    : ${req.desc}" else ""
                     val fallback  = ChatOption.TransactionConfirm(
@@ -427,6 +519,7 @@ class ChatViewModel @Inject constructor(
         }
     }
 
+    // ── Rangkuman ─────────────────────────────────────────────────────────────
     private fun handleRangkuman() {
         val state   = _uiState.value
         val account = state.activeAccount ?: return
@@ -463,6 +556,7 @@ class ChatViewModel @Inject constructor(
         }
     }
 
+    // ── Simpan transaksi dari bot ─────────────────────────────────────────────
     private fun saveBotTransaction(req: SaveRequest) {
         val state     = _uiState.value
         val accountId = state.activeAccount?.id ?: return
@@ -497,20 +591,22 @@ class ChatViewModel @Inject constructor(
         )
         addMessage(UiMessage(role = "user", text = selectedValue))
 
-        if (_uiState.value.isBotMode || botStep !is BotStep.Idle) {
+        // Pilihan kategori/dompet/konfirmasi → selalu ke bot
+        val isTransactionOption = option is ChatOption.CategoryOptions ||
+                option is ChatOption.WalletOptions   ||
+                option is ChatOption.TransactionConfirm
+
+        if (isTransactionOption || botStep !is BotStep.Idle) {
             handleBotMode(selectedValue)
             return
         }
 
-        val historySnapshot = chatHistory.toList()
-        chatHistory.add("user" to selectedValue)
-        lastUserMessage     = selectedValue
-        lastHistorySnapshot = historySnapshot
-
-        executeAiRequest(selectedValue, historySnapshot)
+        // YesNo dari AI → kirim ke AI
+        sendToAi(selectedValue)
     }
 
-    // ── Transaksi ─────────────────────────────────────────────────────────────
+    // ── Konfirmasi transaksi dari AI (bukan bot) ──────────────────────────────
+    // FIX Bug 7: confirmTransaction hanya untuk transaksi yang datang dari AI
     fun confirmTransaction() {
         val pending   = _uiState.value.pendingTransaction ?: return
         val accountId = _uiState.value.activeAccount?.id ?: return
@@ -549,6 +645,8 @@ class ChatViewModel @Inject constructor(
         clearAllOptions()
         addMessage(UiMessage(role = "user", text = "Batal"))
         chatHistory.add("user" to "Batal")
+        // FIX Bug 3: reset botStep saat cancel supaya tidak stuck
+        botStep = BotStep.Idle
     }
 
     private fun clearAllOptions() {
@@ -559,6 +657,43 @@ class ChatViewModel @Inject constructor(
         )
     }
 
+    // ── Deteksi intent transaksi ──────────────────────────────────────────────
+    // FIX Bug 6: logika diperbaiki, tidak ada false positive dari angka sembarangan
+    private fun isTransactionIntent(input: String): Boolean {
+        if (botStep !is BotStep.Idle) return true
+
+        val text = input.trim().lowercase()
+
+        val transactionKeywords = listOf(
+            "pemasukan", "pengeluaran", "setor", "tarik", "beli", "bayar",
+            "makan", "minum", "jajan", "belanja", "ongkos", "biaya", "catat",
+            "keluarin", "habis", "transfer", "dapat", "gaji", "bonus",
+            "terima", "masuk", "keluar", "income", "expense", "transaksi"
+        )
+
+        val aiOnlyKeywords = listOf(
+            "saldo", "berapa", "total", "rangkuman", "ringkasan", "analisis",
+            "laporan", "grafik", "statistik", "summary", "halo", "hai",
+            "apa", "siapa", "bagaimana", "gimana", "tolong jelaskan",
+            "kenapa", "mengapa", "kapan", "tips", "saran"
+        )
+
+        val hasTransactionKw = transactionKeywords.any { text.contains(it) }
+        val hasAiOnlyKw      = aiOnlyKeywords.any { text.contains(it) }
+
+        // Ada keyword transaksi tanpa keyword AI-only → bot
+        if (hasTransactionKw && !hasAiOnlyKw) return true
+
+        // Punya nominal + tidak ada keyword AI-only → kemungkinan transaksi
+        // FIX Bug 6: cek nominal dari teks langsung, bukan manipulasi regex salah
+        val hasAmount = botHandler.parseAmount(text) != null
+
+        if (hasAmount && !hasAiOnlyKw) return true
+
+        return false
+    }
+
+    // ── Clear chat ────────────────────────────────────────────────────────────
     fun clearChat() {
         generationJob?.cancel()
         retryJob?.cancel()
@@ -568,25 +703,26 @@ class ChatViewModel @Inject constructor(
         lastUserMessage        = ""
         lastHistorySnapshot    = emptyList()
         hasShownOfflineMessage = false
+        aiRetryCount           = 0
         _uiState.value = _uiState.value.copy(
-            messages         = emptyList(),
-            isBotMode        = false,
-            isTyping         = false,
-            connectionStatus = ConnectionStatus.CONNECTED,
-            retryCountdown   = 0
+            messages           = emptyList(),
+            isBotMode          = false,
+            isTyping           = false,
+            connectionStatus   = ConnectionStatus.CONNECTED,
+            retryCountdown     = 0,
+            pendingTransaction = null
         )
     }
 
+    // ── Prepare pending transaction ───────────────────────────────────────────
     private fun preparePendingTransaction(confirm: ChatOption.TransactionConfirm) {
-        android.util.Log.d("CHATFIN_DEBUG", "title = '${confirm.title}'")
-        android.util.Log.d("CHATFIN_DEBUG", "amount = ${confirm.amount}, wallet = '${confirm.wallet}'")
         if (confirm.amount <= 0 || confirm.wallet.isBlank()) return
         val state    = _uiState.value
         val allCats  = state.expenseCategories + state.incomeCategories
         val category = allCats.find { it.name.equals(confirm.category, ignoreCase = true) }
             ?: allCats.find { it.name.contains(confirm.category, ignoreCase = true) }
             ?: allCats.find { confirm.category.contains(it.name, ignoreCase = true) }
-        val wallet = state.wallets.find { it.name.equals(confirm.wallet, ignoreCase = true) }
+        val wallet   = state.wallets.find { it.name.equals(confirm.wallet, ignoreCase = true) }
             ?: state.wallets.find { it.name.contains(confirm.wallet, ignoreCase = true) }
             ?: state.wallets.find { confirm.wallet.contains(it.name, ignoreCase = true) }
         if (category != null && wallet != null) {

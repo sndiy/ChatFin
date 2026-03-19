@@ -22,7 +22,7 @@ interface WalletDao {
     fun getTotalBalanceByAccount(accountId: String): Flow<Long?>
 
     // Tambah dompet baru
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertWallet(wallet: WalletEntity)
 
     // Update dompet
