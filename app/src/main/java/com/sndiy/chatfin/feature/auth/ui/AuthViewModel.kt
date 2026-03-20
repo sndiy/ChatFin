@@ -4,25 +4,27 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.firebase.auth.FirebaseUser
 import com.sndiy.chatfin.core.data.auth.AuthRepository
+import com.sndiy.chatfin.core.data.sync.SyncEventBus
 import com.sndiy.chatfin.core.data.sync.SyncRepository
 import com.sndiy.chatfin.core.data.sync.SyncStats
+import com.sndiy.chatfin.feature.finance.account.data.repository.AccountRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 sealed class AuthState {
-    object Idle       : AuthState()
-    object Loading    : AuthState()
+    object Idle    : AuthState()
+    object Loading : AuthState()
     data class Success(val user: FirebaseUser) : AuthState()
     data class Error(val message: String)      : AuthState()
 }
 
 sealed class SyncState {
-    object Idle                              : SyncState()
-    object Syncing                           : SyncState()
-    data class Done(val stats: SyncStats)    : SyncState()
-    data class Error(val message: String)    : SyncState()
+    object Idle                           : SyncState()
+    object Syncing                        : SyncState()
+    data class Done(val stats: SyncStats) : SyncState()
+    data class Error(val message: String) : SyncState()
 }
 
 data class AuthUiState(
@@ -40,7 +42,9 @@ data class AuthUiState(
 @HiltViewModel
 class AuthViewModel @Inject constructor(
     private val authRepo: AuthRepository,
-    private val syncRepo: SyncRepository
+    private val syncRepo: SyncRepository,
+    private val syncEventBus: SyncEventBus,
+    private val accountRepo: AccountRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(AuthUiState())
@@ -54,43 +58,36 @@ class AuthViewModel @Inject constructor(
         }
     }
 
-    fun onEmailChange(value: String) {
+    fun onEmailChange(value: String) =
         _uiState.update { it.copy(email = value, emailError = null) }
-    }
 
-    fun onPasswordChange(value: String) {
+    fun onPasswordChange(value: String) =
         _uiState.update { it.copy(password = value, passwordError = null) }
-    }
 
-    fun onConfirmPasswordChange(value: String) {
+    fun onConfirmPasswordChange(value: String) =
         _uiState.update { it.copy(confirmPassword = value) }
-    }
 
-    fun toggleMode() {
-        _uiState.update { it.copy(
-            isRegisterMode  = !it.isRegisterMode,
-            emailError      = null,
-            passwordError   = null,
-            authState       = AuthState.Idle
-        )}
+    fun toggleMode() = _uiState.update {
+        it.copy(
+            isRegisterMode = !it.isRegisterMode,
+            emailError     = null,
+            passwordError  = null,
+            authState      = AuthState.Idle
+        )
     }
 
     fun loginWithEmail() {
         val state = _uiState.value
         if (!validate(state)) return
-
         _uiState.update { it.copy(authState = AuthState.Loading) }
         viewModelScope.launch {
-            val result = authRepo.loginWithEmail(state.email.trim(), state.password)
-            result.fold(
+            authRepo.loginWithEmail(state.email.trim(), state.password).fold(
                 onSuccess = { user ->
                     _uiState.update { it.copy(authState = AuthState.Success(user)) }
                     syncAfterLogin(user.uid, isNewUser = false)
                 },
                 onFailure = { e ->
-                    _uiState.update { it.copy(
-                        authState = AuthState.Error(friendlyError(e.message))
-                    )}
+                    _uiState.update { it.copy(authState = AuthState.Error(friendlyError(e.message))) }
                 }
             )
         }
@@ -103,19 +100,15 @@ class AuthViewModel @Inject constructor(
             _uiState.update { it.copy(passwordError = "Password tidak sama") }
             return
         }
-
         _uiState.update { it.copy(authState = AuthState.Loading) }
         viewModelScope.launch {
-            val result = authRepo.registerWithEmail(state.email.trim(), state.password)
-            result.fold(
+            authRepo.registerWithEmail(state.email.trim(), state.password).fold(
                 onSuccess = { user ->
                     _uiState.update { it.copy(authState = AuthState.Success(user)) }
                     syncAfterLogin(user.uid, isNewUser = true)
                 },
                 onFailure = { e ->
-                    _uiState.update { it.copy(
-                        authState = AuthState.Error(friendlyError(e.message))
-                    )}
+                    _uiState.update { it.copy(authState = AuthState.Error(friendlyError(e.message))) }
                 }
             )
         }
@@ -129,7 +122,7 @@ class AuthViewModel @Inject constructor(
         }
         viewModelScope.launch {
             authRepo.sendPasswordReset(email)
-            _uiState.update { it.copy(authState = AuthState.Error("Email reset password sudah dikirim")) }
+            _uiState.update { it.copy(authState = AuthState.Error("Email reset password sudah dikirim ke $email")) }
         }
     }
 
@@ -142,10 +135,14 @@ class AuthViewModel @Inject constructor(
         val uid = authRepo.currentUser?.uid ?: return
         _uiState.update { it.copy(syncState = SyncState.Syncing) }
         viewModelScope.launch {
-            val result = syncRepo.uploadAll(uid)
-            result.fold(
-                onSuccess = { stats -> _uiState.update { it.copy(syncState = SyncState.Done(stats)) } },
-                onFailure = { e   -> _uiState.update { it.copy(syncState = SyncState.Error(e.message ?: "Gagal")) } }
+            syncRepo.uploadAll(uid).fold(
+                onSuccess = { stats ->
+                    _uiState.update { it.copy(syncState = SyncState.Done(stats)) }
+                    syncEventBus.notifySyncCompleted()
+                },
+                onFailure = { e ->
+                    _uiState.update { it.copy(syncState = SyncState.Error(e.message ?: "Upload gagal")) }
+                }
             )
         }
     }
@@ -154,57 +151,20 @@ class AuthViewModel @Inject constructor(
         val uid = authRepo.currentUser?.uid ?: return
         _uiState.update { it.copy(syncState = SyncState.Syncing) }
         viewModelScope.launch {
-            val result = syncRepo.downloadAll(uid)
-            result.fold(
-                onSuccess = { stats -> _uiState.update { it.copy(syncState = SyncState.Done(stats)) } },
-                onFailure = { e   -> _uiState.update { it.copy(syncState = SyncState.Error(e.message ?: "Gagal")) } }
-            )
-        }
-    }
-
-    private var onSyncComplete: (() -> Unit)? = null
-
-    fun setSyncCompleteCallback(callback: () -> Unit) {
-        onSyncComplete = callback
-    }
-
-    fun syncUpload(onComplete: (() -> Unit)? = null) {
-        val uid = authRepo.currentUser?.uid ?: return
-        _uiState.update { it.copy(syncState = SyncState.Syncing) }
-        viewModelScope.launch {
-            val result = syncRepo.uploadAll(uid)
-            result.fold(
+            syncRepo.downloadAll(uid).fold(
                 onSuccess = { stats ->
                     _uiState.update { it.copy(syncState = SyncState.Done(stats)) }
-                    onComplete?.invoke()
+                    refreshActiveAccount()
+                    syncEventBus.notifySyncCompleted()
                 },
                 onFailure = { e ->
-                    _uiState.update { it.copy(syncState = SyncState.Error(e.message ?: "Gagal")) }
+                    _uiState.update { it.copy(syncState = SyncState.Error(e.message ?: "Download gagal")) }
                 }
             )
         }
     }
 
-    fun syncDownload(onComplete: (() -> Unit)? = null) {
-        val uid = authRepo.currentUser?.uid ?: return
-        _uiState.update { it.copy(syncState = SyncState.Syncing) }
-        viewModelScope.launch {
-            val result = syncRepo.downloadAll(uid)
-            result.fold(
-                onSuccess = { stats ->
-                    _uiState.update { it.copy(syncState = SyncState.Done(stats)) }
-                    onComplete?.invoke()
-                },
-                onFailure = { e ->
-                    _uiState.update { it.copy(syncState = SyncState.Error(e.message ?: "Gagal")) }
-                }
-            )
-        }
-    }
-
-    fun clearSyncState() {
-        _uiState.update { it.copy(syncState = SyncState.Idle) }
-    }
+    fun clearSyncState() = _uiState.update { it.copy(syncState = SyncState.Idle) }
 
     private suspend fun syncAfterLogin(uid: String, isNewUser: Boolean) {
         _uiState.update { it.copy(syncState = SyncState.Syncing) }
@@ -212,12 +172,25 @@ class AuthViewModel @Inject constructor(
         result.fold(
             onSuccess = { stats ->
                 _uiState.update { it.copy(syncState = SyncState.Done(stats)) }
-                onSyncComplete?.invoke() // trigger refresh
+                if (!isNewUser) refreshActiveAccount()
+                syncEventBus.notifySyncCompleted()
             },
             onFailure = { e ->
                 _uiState.update { it.copy(syncState = SyncState.Error(e.message ?: "Gagal")) }
             }
         )
+    }
+
+    // Set ulang akun aktif setelah download supaya SecureStorage sinkron
+    private suspend fun refreshActiveAccount() {
+        try {
+            val active = accountRepo.getActiveAccount().first()
+            if (active != null) {
+                accountRepo.switchActiveAccount(active.id)
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("AuthVM", "refreshActiveAccount error: ${e.message}")
+        }
     }
 
     private fun validate(state: AuthUiState): Boolean {
@@ -237,12 +210,12 @@ class AuthViewModel @Inject constructor(
     }
 
     private fun friendlyError(msg: String?): String = when {
-        msg == null                                       -> "Terjadi kesalahan"
-        msg.contains("password", ignoreCase = true)      -> "Password salah"
-        msg.contains("no user", ignoreCase = true)       -> "Akun tidak ditemukan"
-        msg.contains("email", ignoreCase = true)         -> "Email sudah terdaftar"
-        msg.contains("network", ignoreCase = true)       -> "Tidak ada koneksi internet"
-        msg.contains("credential", ignoreCase = true)    -> "Email atau password salah"
-        else                                              -> "Login gagal: $msg"
+        msg == null                                    -> "Terjadi kesalahan"
+        msg.contains("password", ignoreCase = true)   -> "Password salah"
+        msg.contains("no user", ignoreCase = true)    -> "Akun tidak ditemukan"
+        msg.contains("email", ignoreCase = true)      -> "Email sudah terdaftar"
+        msg.contains("network", ignoreCase = true)    -> "Tidak ada koneksi internet"
+        msg.contains("credential", ignoreCase = true) -> "Email atau password salah"
+        else                                          -> "Login gagal: $msg"
     }
 }

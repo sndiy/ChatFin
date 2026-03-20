@@ -3,6 +3,7 @@ package com.sndiy.chatfin.feature.finance.dashboard.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.sndiy.chatfin.core.data.local.entity.WalletEntity
+import com.sndiy.chatfin.core.data.sync.SyncEventBus
 import com.sndiy.chatfin.feature.finance.account.data.repository.AccountRepository
 import com.sndiy.chatfin.feature.finance.analytics.ui.AnalyticsPeriod
 import com.sndiy.chatfin.feature.finance.analytics.ui.CategorySlice
@@ -55,7 +56,8 @@ class DashboardViewModel @Inject constructor(
     private val accountRepo: AccountRepository,
     private val walletRepo: WalletRepository,
     private val transactionRepo: TransactionRepository,
-    private val categoryRepo: CategoryRepository
+    private val categoryRepo: CategoryRepository,
+    private val syncEventBus: SyncEventBus
 ) : ViewModel() {
 
     private val _uiState       = MutableStateFlow(DashboardUiState())
@@ -67,6 +69,19 @@ class DashboardViewModel @Inject constructor(
     init {
         observeDashboard()
         observeAnalytics()
+        observeSyncEvent()
+    }
+
+    private fun observeSyncEvent() {
+        viewModelScope.launch {
+            syncEventBus.syncCompleted.collect {
+                android.util.Log.d("DashboardVM", "Sync selesai, dashboard akan auto-refresh via Room Flow")
+                // Room Flow sudah reactive — data otomatis update
+                // Tapi perlu restart observer karena akun aktif mungkin berubah
+                observeDashboard()
+                observeAnalytics()
+            }
+        }
     }
 
     fun selectPeriod(period: AnalyticsPeriod) {

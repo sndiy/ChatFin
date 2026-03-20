@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.sndiy.chatfin.ai.*
 import com.sndiy.chatfin.core.data.local.entity.*
+import com.sndiy.chatfin.core.data.sync.SyncEventBus
 import com.sndiy.chatfin.core.utils.NetworkMonitor
 import com.sndiy.chatfin.feature.finance.account.data.repository.AccountRepository
 import com.sndiy.chatfin.feature.finance.transaction.data.repository.CategoryRepository
@@ -68,7 +69,8 @@ class ChatViewModel @Inject constructor(
     private val contextBuilder: FinanceContextBuilder,
     private val botHandler: BotModeHandler,
     private val geminiClient: GeminiClient,
-    private val networkMonitor: NetworkMonitor
+    private val networkMonitor: NetworkMonitor,
+    private val syncEventBus: SyncEventBus
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ChatUiState())
@@ -94,6 +96,25 @@ class ChatViewModel @Inject constructor(
     init {
         observeActiveAccount()
         observeNetwork()
+        observeSyncEvent()
+    }
+
+    private fun observeSyncEvent() {
+        viewModelScope.launch {
+            syncEventBus.syncCompleted.collect {
+                android.util.Log.d("ChatVM", "Sync selesai, reload data")
+                val account = _uiState.value.activeAccount
+                if (account != null) {
+                    loadAccountData(account.id)
+                } else {
+                    // Coba ambil akun aktif dari database
+                    accountRepo.getActiveAccount().first()?.let { acc ->
+                        _uiState.update { it.copy(activeAccount = acc) }
+                        loadAccountData(acc.id)
+                    }
+                }
+            }
+        }
     }
 
     // ── Monitor jaringan ──────────────────────────────────────────────────────
