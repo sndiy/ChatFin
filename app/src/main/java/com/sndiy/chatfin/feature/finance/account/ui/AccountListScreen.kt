@@ -1,5 +1,3 @@
-// app/src/main/java/com/sndiy/chatfin/feature/finance/account/ui/AccountListScreen.kt
-
 package com.sndiy.chatfin.feature.finance.account.ui
 
 import androidx.compose.foundation.background
@@ -33,12 +31,9 @@ fun AccountListScreen(
     viewModel: AccountViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-
-    // State konfirmasi hapus
     var accountToDelete by remember { mutableStateOf<FinanceAccountEntity?>(null) }
-
-    // Tampilkan snackbar untuk error/success
     val snackbarHostState = remember { SnackbarHostState() }
+
     LaunchedEffect(uiState.errorMessage, uiState.successMessage) {
         uiState.errorMessage?.let {
             snackbarHostState.showSnackbar(it)
@@ -56,84 +51,59 @@ fun AccountListScreen(
                 title = { Text("Kelola Akun") },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(
-                            imageVector        = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Kembali"
-                        )
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Kembali")
                     }
                 }
             )
         },
         floatingActionButton = {
             FloatingActionButton(onClick = onNavigateToAddAccount) {
-                Icon(
-                    imageVector        = Icons.Default.Add,
-                    contentDescription = "Tambah akun"
-                )
+                Icon(Icons.Default.Add, "Tambah akun")
             }
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { paddingValues ->
-
         if (uiState.accounts.isEmpty()) {
-            // State kosong
             EmptyAccountState(
-                modifier          = Modifier.padding(paddingValues),
-                onAddAccount      = onNavigateToAddAccount
+                modifier     = Modifier.padding(paddingValues),
+                onAddAccount = onNavigateToAddAccount
             )
         } else {
             LazyColumn(
-                modifier          = Modifier.padding(paddingValues),
-                contentPadding    = PaddingValues(ChatFinSpacing.md),
+                modifier            = Modifier.padding(paddingValues),
+                contentPadding      = PaddingValues(ChatFinSpacing.md),
                 verticalArrangement = Arrangement.spacedBy(ChatFinSpacing.sm)
             ) {
-                items(
-                    items = uiState.accounts,
-                    key   = { it.id }
-                ) { account ->
+                items(uiState.accounts, key = { it.id }) { account ->
                     AccountListItem(
-                        account    = account,
-                        isActive   = account.id == uiState.activeAccount?.id,
+                        account     = account,
+                        isActive    = account.id == uiState.activeAccount?.id,
                         onSetActive = { viewModel.switchAccount(account.id) },
-                        onEdit     = { onNavigateToEditAccount(account.id) },
-                        onDelete   = { accountToDelete = account }
+                        onEdit      = { onNavigateToEditAccount(account.id) },
+                        onDelete    = { accountToDelete = account }
                     )
                 }
             }
         }
     }
 
-    // ── Dialog konfirmasi hapus ────────────────────────────────────────────────
     accountToDelete?.let { account ->
         AlertDialog(
             onDismissRequest = { accountToDelete = null },
             title   = { Text("Hapus Akun?") },
-            text    = {
-                Text("Akun '${account.name}' dan semua data di dalamnya akan dihapus permanen. Tindakan ini tidak bisa dibatalkan.")
-            },
+            text    = { Text("Akun '${account.name}' dan semua data di dalamnya akan dihapus permanen. Tindakan ini tidak bisa dibatalkan.") },
             confirmButton = {
-                TextButton(
-                    onClick = {
-                        viewModel.deleteAccount(account)
-                        accountToDelete = null
-                    }
-                ) {
-                    Text(
-                        text  = "Hapus",
-                        color = MaterialTheme.colorScheme.error
-                    )
+                TextButton(onClick = { viewModel.deleteAccount(account); accountToDelete = null }) {
+                    Text("Hapus", color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { accountToDelete = null }) {
-                    Text("Batal")
-                }
+                TextButton(onClick = { accountToDelete = null }) { Text("Batal") }
             }
         )
     }
 }
 
-// ── Satu item akun dalam list ─────────────────────────────────────────────────
 @Composable
 private fun AccountListItem(
     account: FinanceAccountEntity,
@@ -149,8 +119,10 @@ private fun AccountListItem(
     var showMenu by remember { mutableStateOf(false) }
 
     Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors   = CardDefaults.cardColors(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onSetActive),
+        colors = CardDefaults.cardColors(
             containerColor = if (isActive)
                 MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
             else
@@ -158,14 +130,13 @@ private fun AccountListItem(
         )
     ) {
         Row(
-            modifier          = Modifier
+            modifier              = Modifier
                 .fillMaxWidth()
-                .clickable(onClick = onSetActive)
                 .padding(ChatFinSpacing.md),
-            verticalAlignment = Alignment.CenterVertically,
+            verticalAlignment     = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(ChatFinSpacing.md)
         ) {
-            // Avatar
+            // ── Avatar ────────────────────────────────────────────────────────
             Box(
                 modifier         = Modifier
                     .size(48.dp)
@@ -180,10 +151,10 @@ private fun AccountListItem(
                 )
             }
 
-            // Info akun
+            // ── Info ──────────────────────────────────────────────────────────
             Column(modifier = Modifier.weight(1f)) {
                 Row(
-                    verticalAlignment = Alignment.CenterVertically,
+                    verticalAlignment     = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(ChatFinSpacing.xs)
                 ) {
                     Text(
@@ -217,43 +188,48 @@ private fun AccountListItem(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                // Hint tap untuk set aktif kalau belum aktif
+                if (!isActive) {
+                    Text(
+                        text  = "Tap untuk set aktif",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
+                    )
+                }
             }
 
-            // Menu opsi (titik tiga)
+            // ── Menu ──────────────────────────────────────────────────────────
             Box {
                 IconButton(onClick = { showMenu = true }) {
-                    Icon(
-                        imageVector        = Icons.Default.MoreVert,
-                        contentDescription = "Opsi"
-                    )
+                    Icon(Icons.Default.MoreVert, "Opsi")
                 }
                 DropdownMenu(
                     expanded         = showMenu,
                     onDismissRequest = { showMenu = false }
                 ) {
+                    if (!isActive) {
+                        DropdownMenuItem(
+                            text        = { Text("Set sebagai Aktif") },
+                            leadingIcon = {
+                                Icon(
+                                    Icons.Default.CheckCircle, null,
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            },
+                            onClick = { showMenu = false; onSetActive() }
+                        )
+                    }
                     DropdownMenuItem(
-                        text    = { Text("Edit") },
-                        leadingIcon = {
-                            Icon(Icons.Default.Edit, contentDescription = null)
-                        },
-                        onClick = {
-                            showMenu = false
-                            onEdit()
-                        }
+                        text        = { Text("Edit") },
+                        leadingIcon = { Icon(Icons.Default.Edit, null) },
+                        onClick     = { showMenu = false; onEdit() }
                     )
                     DropdownMenuItem(
-                        text    = { Text("Hapus", color = MaterialTheme.colorScheme.error) },
+                        text        = { Text("Hapus", color = MaterialTheme.colorScheme.error) },
                         leadingIcon = {
-                            Icon(
-                                Icons.Default.Delete,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.error
-                            )
+                            Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error)
                         },
-                        onClick = {
-                            showMenu = false
-                            onDelete()
-                        }
+                        onClick = { showMenu = false; onDelete() }
                     )
                 }
             }
@@ -261,37 +237,32 @@ private fun AccountListItem(
     }
 }
 
-// ── Tampilan saat belum ada akun ──────────────────────────────────────────────
 @Composable
 private fun EmptyAccountState(
     modifier: Modifier = Modifier,
     onAddAccount: () -> Unit
 ) {
     Column(
-        modifier              = modifier.fillMaxSize(),
-        horizontalAlignment   = Alignment.CenterHorizontally,
-        verticalArrangement   = Arrangement.Center
+        modifier            = modifier.fillMaxSize(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
     ) {
         Icon(
-            imageVector        = Icons.Default.AccountBalance,
-            contentDescription = null,
-            modifier           = Modifier.size(72.dp),
-            tint               = MaterialTheme.colorScheme.onSurfaceVariant
+            Icons.Default.AccountBalance, null,
+            modifier = Modifier.size(72.dp),
+            tint     = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        Spacer(modifier = Modifier.height(ChatFinSpacing.md))
+        Spacer(Modifier.height(ChatFinSpacing.md))
+        Text("Belum ada akun", style = MaterialTheme.typography.titleMedium)
         Text(
-            text  = "Belum ada akun",
-            style = MaterialTheme.typography.titleMedium
-        )
-        Text(
-            text  = "Buat akun pertamamu untuk mulai mencatat keuangan",
+            "Buat akun pertamamu untuk mulai mencatat keuangan",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        Spacer(modifier = Modifier.height(ChatFinSpacing.lg))
+        Spacer(Modifier.height(ChatFinSpacing.lg))
         Button(onClick = onAddAccount) {
-            Icon(Icons.Default.Add, contentDescription = null)
-            Spacer(modifier = Modifier.width(ChatFinSpacing.sm))
+            Icon(Icons.Default.Add, null)
+            Spacer(Modifier.width(ChatFinSpacing.sm))
             Text("Buat Akun")
         }
     }

@@ -3,6 +3,7 @@
 package com.sndiy.chatfin.feature.finance.transaction.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -315,19 +316,16 @@ fun WalletFormScreen(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 walletColors.forEach { hex ->
                     val c = runCatching { Color(android.graphics.Color.parseColor(hex)) }.getOrElse { Color.Gray }
+                    val isSelected = formState.colorHex == hex
                     Box(
-                        modifier = Modifier
+                        modifier         = Modifier
                             .size(36.dp)
                             .clip(CircleShape)
                             .background(c)
-                            .then(
-                                if (formState.colorHex == hex)
-                                    Modifier.padding(3.dp)
-                                else Modifier
-                            ),
+                            .clickable { viewModel.onColorChange(hex) },
                         contentAlignment = Alignment.Center
                     ) {
-                        if (formState.colorHex == hex) {
+                        if (isSelected) {
                             Icon(Icons.Default.Check, null, tint = Color.White, modifier = Modifier.size(20.dp))
                         }
                     }

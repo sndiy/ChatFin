@@ -162,27 +162,62 @@ class AuthViewModel @Inject constructor(
         }
     }
 
+    private var onSyncComplete: (() -> Unit)? = null
+
+    fun setSyncCompleteCallback(callback: () -> Unit) {
+        onSyncComplete = callback
+    }
+
+    fun syncUpload(onComplete: (() -> Unit)? = null) {
+        val uid = authRepo.currentUser?.uid ?: return
+        _uiState.update { it.copy(syncState = SyncState.Syncing) }
+        viewModelScope.launch {
+            val result = syncRepo.uploadAll(uid)
+            result.fold(
+                onSuccess = { stats ->
+                    _uiState.update { it.copy(syncState = SyncState.Done(stats)) }
+                    onComplete?.invoke()
+                },
+                onFailure = { e ->
+                    _uiState.update { it.copy(syncState = SyncState.Error(e.message ?: "Gagal")) }
+                }
+            )
+        }
+    }
+
+    fun syncDownload(onComplete: (() -> Unit)? = null) {
+        val uid = authRepo.currentUser?.uid ?: return
+        _uiState.update { it.copy(syncState = SyncState.Syncing) }
+        viewModelScope.launch {
+            val result = syncRepo.downloadAll(uid)
+            result.fold(
+                onSuccess = { stats ->
+                    _uiState.update { it.copy(syncState = SyncState.Done(stats)) }
+                    onComplete?.invoke()
+                },
+                onFailure = { e ->
+                    _uiState.update { it.copy(syncState = SyncState.Error(e.message ?: "Gagal")) }
+                }
+            )
+        }
+    }
+
     fun clearSyncState() {
         _uiState.update { it.copy(syncState = SyncState.Idle) }
     }
 
     private suspend fun syncAfterLogin(uid: String, isNewUser: Boolean) {
         _uiState.update { it.copy(syncState = SyncState.Syncing) }
-        if (isNewUser) {
-            // User baru → upload data lokal ke cloud
-            val result = syncRepo.uploadAll(uid)
-            result.fold(
-                onSuccess = { stats -> _uiState.update { it.copy(syncState = SyncState.Done(stats)) } },
-                onFailure = { e    -> _uiState.update { it.copy(syncState = SyncState.Error(e.message ?: "Gagal")) } }
-            )
-        } else {
-            // User lama → download data dari cloud
-            val result = syncRepo.downloadAll(uid)
-            result.fold(
-                onSuccess = { stats -> _uiState.update { it.copy(syncState = SyncState.Done(stats)) } },
-                onFailure = { e    -> _uiState.update { it.copy(syncState = SyncState.Error(e.message ?: "Gagal")) } }
-            )
-        }
+        val result = if (isNewUser) syncRepo.uploadAll(uid) else syncRepo.downloadAll(uid)
+        result.fold(
+            onSuccess = { stats ->
+                _uiState.update { it.copy(syncState = SyncState.Done(stats)) }
+                onSyncComplete?.invoke() // trigger refresh
+            },
+            onFailure = { e ->
+                _uiState.update { it.copy(syncState = SyncState.Error(e.message ?: "Gagal")) }
+            }
+        )
     }
 
     private fun validate(state: AuthUiState): Boolean {

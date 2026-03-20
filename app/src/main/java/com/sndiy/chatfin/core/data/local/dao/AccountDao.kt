@@ -22,7 +22,7 @@ interface AccountDao {
     suspend fun getAccountById(id: String): FinanceAccountEntity?
 
     // Tambah atau update akun
-    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAccount(account: FinanceAccountEntity)
 
     // Update akun yang sudah ada

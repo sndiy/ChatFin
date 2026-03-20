@@ -13,6 +13,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.sndiy.chatfin.feature.finance.dashboard.ui.DashboardViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -20,7 +21,9 @@ fun SyncSettingsScreen(
     onNavigateBack: () -> Unit,
     onNavigateToAuth: () -> Unit,
     onLoggedOut: () -> Unit,
-    viewModel: AuthViewModel = hiltViewModel()
+    viewModel: AuthViewModel = hiltViewModel(),
+    // ViewModel lain untuk refresh data
+    dashboardViewModel: DashboardViewModel = hiltViewModel(),
 ) {
     val uiState       by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarState = remember { SnackbarHostState() }
@@ -30,12 +33,12 @@ fun SyncSettingsScreen(
         when (val s = uiState.syncState) {
             is SyncState.Done -> {
                 snackbarState.showSnackbar(
-                    "Selesai — ${s.stats.transactions} transaksi, ${s.stats.wallets} dompet"
+                    "Selesai — ${s.stats.transactions} transaksi, ${s.stats.wallets} dompet, ${s.stats.accounts} akun"
                 )
                 viewModel.clearSyncState()
             }
             is SyncState.Error -> {
-                snackbarState.showSnackbar(s.message)
+                snackbarState.showSnackbar("Error: ${s.message}")
                 viewModel.clearSyncState()
             }
             else -> {}
@@ -49,6 +52,17 @@ fun SyncSettingsScreen(
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, "Kembali")
+                    }
+                },
+                actions = {
+                    // Tombol refresh manual
+                    if (uiState.currentUser != null) {
+                        IconButton(
+                            onClick  = { viewModel.syncDownload() },
+                            enabled  = uiState.syncState !is SyncState.Syncing
+                        ) {
+                            Icon(Icons.Default.Refresh, "Refresh data")
+                        }
                     }
                 }
             )
@@ -69,9 +83,9 @@ fun SyncSettingsScreen(
                 )
             ) {
                 Row(
-                    modifier          = Modifier.padding(16.dp).fillMaxWidth(),
+                    modifier              = Modifier.padding(16.dp).fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment     = Alignment.CenterVertically
                 ) {
                     Icon(
                         Icons.Default.AccountCircle, null,
@@ -98,23 +112,23 @@ fun SyncSettingsScreen(
                 SyncActionCard(
                     icon        = Icons.Default.CloudUpload,
                     title       = "Upload ke Cloud",
-                    subtitle    = "Simpan data lokal ke Firebase",
+                    subtitle    = "Simpan semua data lokal ke Firebase",
                     buttonLabel = "Upload Sekarang",
                     isLoading   = uiState.syncState is SyncState.Syncing,
-                    onClick     = viewModel::syncUpload
+                    onClick     = { viewModel.syncUpload() }
                 )
 
                 // ── Download ──────────────────────────────────────────────────
                 SyncActionCard(
                     icon        = Icons.Default.CloudDownload,
                     title       = "Download dari Cloud",
-                    subtitle    = "Pulihkan data dari Firebase ke perangkat ini",
+                    subtitle    = "Pulihkan semua data dari Firebase ke perangkat ini",
                     buttonLabel = "Download Sekarang",
                     isLoading   = uiState.syncState is SyncState.Syncing,
-                    onClick     = viewModel::syncDownload
+                    onClick     = { viewModel.syncDownload() }
                 )
 
-                // ── Loading indicator ─────────────────────────────────────────
+                // ── Loading ───────────────────────────────────────────────────
                 if (uiState.syncState is SyncState.Syncing) {
                     Card(modifier = Modifier.fillMaxWidth()) {
                         Row(
@@ -143,7 +157,6 @@ fun SyncSettingsScreen(
                     Text("Keluar dari Akun")
                 }
             } else {
-                // Belum login
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors   = CardDefaults.cardColors(
