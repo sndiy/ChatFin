@@ -265,10 +265,4 @@ class BotModeHandler @Inject constructor() {
 
     private fun parseDecimal(input: String): Double? =
         input.replace(",", ".").toDoubleOrNull()
-
-    fun isBotCommand(input: String): Boolean {
-        val cmd = input.trim().lowercase().trimStart('/')
-        return cmd in listOf("help", "bantuan", "setor", "tarik", "saldo", "balance", "rangkuman", "summary") ||
-                cmd.startsWith("setor ") || cmd.startsWith("tarik ")
-    }
 }

@@ -22,17 +22,14 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.sndiy.chatfin.feature.chat.ui.ChatViewModel
 import com.sndiy.chatfin.feature.chat.ui.ChatScreen
 import com.sndiy.chatfin.feature.auth.ui.AuthScreen
-import com.sndiy.chatfin.feature.auth.ui.SyncSettingsScreen
 import com.sndiy.chatfin.feature.finance.account.ui.AccountFormScreen
 import com.sndiy.chatfin.feature.finance.account.ui.AccountListScreen
-import com.sndiy.chatfin.feature.finance.analytics.ui.AnalyticsScreen
 import com.sndiy.chatfin.feature.finance.category.ui.CategoryScreen
 import com.sndiy.chatfin.feature.finance.dashboard.ui.DashboardScreen
-import com.sndiy.chatfin.feature.finance.transaction.ui.TransactionFormScreen
 import com.sndiy.chatfin.feature.finance.transaction.ui.TransactionListScreen
 import com.sndiy.chatfin.feature.finance.transaction.ui.WalletFormScreen
 import com.sndiy.chatfin.feature.finance.transaction.ui.WalletListScreen
-import com.sndiy.chatfin.feature.settings.backup.BackupScreen
+import com.sndiy.chatfin.feature.settings.backup.DataBackupScreen
 import com.sndiy.chatfin.feature.settings.ui.AboutScreen
 import com.sndiy.chatfin.feature.settings.ui.SettingsScreen
 import com.sndiy.chatfin.feature.settings.ui.SettingsThemeScreen
@@ -141,7 +138,7 @@ fun ChatFinNavGraph(
                         fadeOut(animationSpec = tween(300))
             }
         ) {
-            // ── Splash ─────────────────────────────────────────────────────────
+            // ── Splash ────────────────────────────────────────────────────────
             composable(
                 route          = Screen.Splash.route,
                 exitTransition = { fadeOut(animationSpec = tween(400)) }
@@ -160,7 +157,7 @@ fun ChatFinNavGraph(
                 )
             }
 
-            // ── Bottom Nav ─────────────────────────────────────────────────────
+            // ── Bottom Nav ────────────────────────────────────────────────────
             composable(Screen.Dashboard.route) {
                 DashboardScreen(onNavigateToChat = { navController.navigate(Screen.Chat.route) })
             }
@@ -177,7 +174,7 @@ fun ChatFinNavGraph(
                 )
             }
 
-            // ── Akun ───────────────────────────────────────────────────────────
+            // ── Akun ──────────────────────────────────────────────────────────
             composable(Screen.AccountList.route) {
                 AccountListScreen(
                     onNavigateBack          = { navController.popBackStack() },
@@ -198,22 +195,7 @@ fun ChatFinNavGraph(
                 )
             }
 
-            // ── Transaksi ──────────────────────────────────────────────────────
-            composable(
-                route     = Screen.TransactionForm.route,
-                arguments = listOf(navArgument("transactionId") {
-                    type         = NavType.StringType
-                    defaultValue = "new"
-                })
-            ) {
-                TransactionFormScreen(onNavigateBack = { navController.popBackStack() })
-            }
-            composable(
-                route     = Screen.TransactionDetail.route,
-                arguments = listOf(navArgument("transactionId") { type = NavType.StringType })
-            ) { PlaceholderScreen("Detail Transaksi") }
-
-            // ── Dompet ─────────────────────────────────────────────────────────
+            // ── Dompet ────────────────────────────────────────────────────────
             composable(Screen.WalletList.route) {
                 WalletListScreen(
                     onNavigateBack  = { navController.popBackStack() },
@@ -230,39 +212,31 @@ fun ChatFinNavGraph(
                 WalletFormScreen(onNavigateBack = { navController.popBackStack() })
             }
 
-            // ── Kategori ───────────────────────────────────────────────────────
+            // ── Kategori ──────────────────────────────────────────────────────
             composable(Screen.CategoryList.route) {
                 CategoryScreen(onNavigateBack = { navController.popBackStack() })
             }
 
-            // ── Analitik ───────────────────────────────────────────────────────
-            composable(Screen.Analytics.route) {
-                AnalyticsScreen(onNavigateBack = { navController.popBackStack() })
-            }
-
-            // ── Setelan sub-halaman ────────────────────────────────────────────
+            // ── Setelan sub-halaman ───────────────────────────────────────────
             composable(Screen.SettingsTheme.route) {
                 SettingsThemeScreen(onNavigateBack = { navController.popBackStack() })
-            }
-            composable(Screen.SettingsBackup.route) {
-                BackupScreen(onNavigateBack = { navController.popBackStack() })
             }
             composable(Screen.SettingsAbout.route) {
                 AboutScreen(onNavigateBack = { navController.popBackStack() })
             }
+            composable(Screen.SettingsBackup.route) {
+                DataBackupScreen(
+                    onNavigateBack   = { navController.popBackStack() },
+                    onNavigateToAuth = { navController.navigate(Screen.Auth.route) },
+                    onLoggedOut      = { navController.popBackStack() }
+                )
+            }
 
-            // ── Auth & Sync ────────────────────────────────────────────────────────────
+            // ── Auth ──────────────────────────────────────────────────────────
             composable(Screen.Auth.route) {
                 AuthScreen(
                     onAuthSuccess = { navController.popBackStack() },
                     onSkip        = { navController.popBackStack() }
-                )
-            }
-            composable(Screen.SyncSettings.route) {
-                SyncSettingsScreen(
-                    onNavigateBack   = { navController.popBackStack() },
-                    onNavigateToAuth = { navController.navigate(Screen.Auth.route) },
-                    onLoggedOut      = { navController.popBackStack() }
                 )
             }
         }

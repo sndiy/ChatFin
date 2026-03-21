@@ -80,15 +80,15 @@ fun SettingsScreen(
                 onClick = { navController.navigate(Screen.SyncSettings.route) }
             )
             SettingsItem(
-                icon = Icons.Default.SaveAlt,
-                title = "Backup & Restore",
-                subtitle = "Simpan data lokal ke file",
-                onClick = { navController.navigate(Screen.SettingsBackup.route) }
+                icon     = Icons.Default.SaveAlt,
+                title    = "Data & Backup",
+                subtitle = if (isLoggedIn) "Login sebagai $userEmail" else "Backup lokal & sinkronisasi cloud",
+                onClick  = { navController.navigate(Screen.SettingsBackup.route) }
             )
             SettingsItem(
                 icon = Icons.Default.Info,
                 title = "Tentang ChatFin",
-                subtitle = "Versi 1.3.0",
+                subtitle = "Versi 1.6.0",
                 onClick = { navController.navigate(Screen.SettingsAbout.route) }
             )
         }

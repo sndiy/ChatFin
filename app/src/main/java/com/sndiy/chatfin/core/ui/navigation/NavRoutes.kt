@@ -9,18 +9,10 @@ sealed class Screen(val route: String) {
     data object Chat           : Screen("chat")
     data object TransactionList: Screen("transaction_list")
     data object Settings       : Screen("settings")
-    data object Analytics      : Screen("analytics")
 
     data object AccountList : Screen("account_list")
     data object AccountForm : Screen("account_form/{accountId}") {
         fun createRoute(accountId: String = "new") = "account_form/$accountId"
-    }
-
-    data object TransactionForm : Screen("transaction_form/{transactionId}") {
-        fun createRoute(transactionId: String = "new") = "transaction_form/$transactionId"
-    }
-    data object TransactionDetail : Screen("transaction_detail/{transactionId}") {
-        fun createRoute(transactionId: String) = "transaction_detail/$transactionId"
     }
 
     data object WalletList : Screen("wallet_list")
