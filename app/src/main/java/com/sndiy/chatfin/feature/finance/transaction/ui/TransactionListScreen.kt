@@ -29,6 +29,7 @@ import com.sndiy.chatfin.core.data.local.entity.TransactionEntity
 import com.sndiy.chatfin.core.ui.theme.ExpenseRed
 import com.sndiy.chatfin.core.ui.theme.IncomeGreen
 import java.text.NumberFormat
+import java.time.LocalDate
 import java.util.Locale
 
 private enum class TxFilter(val label: String) {
@@ -52,8 +53,9 @@ fun TransactionListScreen(
     var visibleCount        by remember { mutableIntStateOf(10) }
     var searchQuery         by remember { mutableStateOf("") }
     var isSearchActive      by remember { mutableStateOf(false) }
+    var showDateFilter      by remember { mutableStateOf(false) }
 
-    LaunchedEffect(activeFilter, searchQuery) { visibleCount = 10 }
+    LaunchedEffect(activeFilter, searchQuery, listState.dateFilter) { visibleCount = 10 }
 
     LaunchedEffect(formState.isSaved) {
         if (formState.isSaved) { showEditSheet = false; viewModel.resetForm() }
@@ -66,13 +68,24 @@ fun TransactionListScreen(
 
     val allCategories = listState.expenseCategories + listState.incomeCategories
 
-    val filteredTx = remember(listState.transactions, activeFilter, searchQuery) {
+    val filteredTx = remember(listState.transactions, activeFilter, searchQuery, listState.dateFilter) {
         listState.transactions
             .let { list ->
                 when (activeFilter) {
                     TxFilter.ALL     -> list
                     TxFilter.INCOME  -> list.filter { it.type == "INCOME" }
                     TxFilter.EXPENSE -> list.filter { it.type == "EXPENSE" }
+                }
+            }
+            .let { list ->
+                // Filter tanggal
+                val df = listState.dateFilter
+                if (!df.isActive) list
+                else list.filter { tx ->
+                    val txDate = runCatching { LocalDate.parse(tx.date) }.getOrNull() ?: return@filter true
+                    val afterStart  = df.startDate?.let { !txDate.isBefore(it) } ?: true
+                    val beforeEnd   = df.endDate?.let { !txDate.isAfter(it) } ?: true
+                    afterStart && beforeEnd
                 }
             }
             .let { list ->
@@ -112,6 +125,17 @@ fun TransactionListScreen(
                         }
                     },
                     actions = {
+                        // Tombol filter tanggal — berwarna kalau aktif
+                        IconButton(onClick = { showDateFilter = true }) {
+                            Icon(
+                                Icons.Default.DateRange,
+                                "Filter tanggal",
+                                tint = if (listState.dateFilter.isActive)
+                                    MaterialTheme.colorScheme.primary
+                                else
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                         IconButton(onClick = { isSearchActive = true }) {
                             Icon(Icons.Default.Search, "Cari")
                         }
@@ -128,36 +152,65 @@ fun TransactionListScreen(
         ) {
             // ── Filter chips ──────────────────────────────────────────────────
             item {
-                Row(
-                    modifier              = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment     = Alignment.CenterVertically
-                ) {
-                    TxFilter.entries.forEach { filter ->
-                        FilterChip(
-                            selected = activeFilter == filter,
-                            onClick  = { activeFilter = filter },
-                            label    = {
-                                val count = when (filter) {
-                                    TxFilter.ALL     -> listState.transactions.size
-                                    TxFilter.INCOME  -> listState.transactions.count { it.type == "INCOME" }
-                                    TxFilter.EXPENSE -> listState.transactions.count { it.type == "EXPENSE" }
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        modifier              = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment     = Alignment.CenterVertically
+                    ) {
+                        TxFilter.entries.forEach { filter ->
+                            FilterChip(
+                                selected = activeFilter == filter,
+                                onClick  = { activeFilter = filter },
+                                label    = {
+                                    val count = when (filter) {
+                                        TxFilter.ALL     -> listState.transactions.size
+                                        TxFilter.INCOME  -> listState.transactions.count { it.type == "INCOME" }
+                                        TxFilter.EXPENSE -> listState.transactions.count { it.type == "EXPENSE" }
+                                    }
+                                    Text("${filter.label} ($count)", style = MaterialTheme.typography.labelMedium)
+                                },
+                                leadingIcon = when (filter) {
+                                    TxFilter.ALL     -> null
+                                    TxFilter.INCOME  -> { { Icon(Icons.Default.TrendingUp,   null, Modifier.size(14.dp), tint = IncomeGreen) } }
+                                    TxFilter.EXPENSE -> { { Icon(Icons.Default.TrendingDown, null, Modifier.size(14.dp), tint = ExpenseRed)  } }
                                 }
-                                Text("${filter.label} ($count)", style = MaterialTheme.typography.labelMedium)
-                            },
-                            leadingIcon = when (filter) {
-                                TxFilter.ALL     -> null
-                                TxFilter.INCOME  -> { { Icon(Icons.Default.TrendingUp,   null, Modifier.size(14.dp), tint = IncomeGreen) } }
-                                TxFilter.EXPENSE -> { { Icon(Icons.Default.TrendingDown, null, Modifier.size(14.dp), tint = ExpenseRed)  } }
+                            )
+                        }
+                    }
+
+                    // Tampilkan chip filter tanggal kalau aktif
+                    if (listState.dateFilter.isActive) {
+                        Row(
+                            verticalAlignment     = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.DateRange, null,
+                                modifier = Modifier.size(16.dp),
+                                tint     = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                listState.dateFilter.label,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            TextButton(
+                                onClick      = { viewModel.clearDateFilter() },
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                            ) {
+                                Icon(Icons.Default.Close, null, modifier = Modifier.size(14.dp))
+                                Spacer(Modifier.width(2.dp))
+                                Text("Hapus filter", style = MaterialTheme.typography.labelSmall)
                             }
-                        )
+                        }
                     }
                 }
             }
 
             // ── List transaksi / empty state ──────────────────────────────────
             if (filteredTx.isEmpty()) {
-                if (searchQuery.isNotBlank()) {
+                if (searchQuery.isNotBlank() || listState.dateFilter.isActive) {
                     item {
                         Box(
                             Modifier.fillMaxWidth().padding(vertical = 48.dp),
@@ -168,19 +221,26 @@ fun TransactionListScreen(
                                 verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 Icon(
-                                    Icons.Default.SearchOff, null,
+                                    if (listState.dateFilter.isActive) Icons.Default.DateRange
+                                    else Icons.Default.SearchOff,
+                                    null,
                                     Modifier.size(64.dp),
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
+                                Text("Tidak ditemukan", style = MaterialTheme.typography.titleMedium)
                                 Text(
-                                    "Tidak ditemukan",
-                                    style = MaterialTheme.typography.titleMedium
-                                )
-                                Text(
-                                    "Tidak ada transaksi yang cocok\ndengan \"$searchQuery\"",
+                                    if (listState.dateFilter.isActive)
+                                        "Tidak ada transaksi di rentang tanggal ini"
+                                    else
+                                        "Tidak ada transaksi yang cocok\ndengan \"$searchQuery\"",
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
+                                if (listState.dateFilter.isActive) {
+                                    TextButton(onClick = { viewModel.clearDateFilter() }) {
+                                        Text("Hapus filter tanggal")
+                                    }
+                                }
                             }
                         }
                     }
@@ -188,7 +248,6 @@ fun TransactionListScreen(
                     item { EmptyTransactionState(onAdd = onNavigateToAdd) }
                 }
             } else {
-                // Tampilkan jumlah hasil saat search aktif
                 if (searchQuery.isNotBlank()) {
                     item {
                         Text(
@@ -225,7 +284,6 @@ fun TransactionListScreen(
                     }
                 }
 
-                // ── Show more ─────────────────────────────────────────────────
                 if (hasMore) {
                     item(key = "show_more") {
                         OutlinedButton(
@@ -260,20 +318,47 @@ fun TransactionListScreen(
         }
     }
 
+    // ── Dialog filter tanggal ─────────────────────────────────────────────────
+    if (showDateFilter) {
+        DateFilterDialog(
+            currentFilter = listState.dateFilter,
+            onApply       = { start, end ->
+                viewModel.setDateFilter(start, end)
+                showDateFilter = false
+            },
+            onDismiss     = { showDateFilter = false }
+        )
+    }
+
     // ── Dialog hapus ──────────────────────────────────────────────────────────
     transactionToDelete?.let { tx ->
+        val fmt       = NumberFormat.getNumberInstance(Locale("id", "ID"))
+        val isLarge   = tx.amount >= 500_000
         AlertDialog(
             onDismissRequest = { transactionToDelete = null },
-            title   = { Text("Hapus Transaksi?") },
-            text    = { Text("Saldo dompet akan dikembalikan. Tindakan ini tidak bisa dibatalkan.") },
+            icon    = if (isLarge) {
+                { Icon(Icons.Default.Warning, null, tint = MaterialTheme.colorScheme.error) }
+            } else null,
+            title   = { Text(if (isLarge) "⚠️ Hapus Transaksi Besar?" else "Hapus Transaksi?") },
+            text    = {
+                Text(if (isLarge)
+                    "Transaksi ini bernilai Rp ${fmt.format(tx.amount)}.\nSaldo dompet akan dikembalikan. Tindakan ini tidak bisa dibatalkan."
+                else
+                    "Saldo dompet akan dikembalikan. Tindakan ini tidak bisa dibatalkan."
+                )
+            },
             confirmButton = {
-                TextButton(onClick = { viewModel.deleteTransaction(tx); transactionToDelete = null }) {
-                    Text("Hapus", color = MaterialTheme.colorScheme.error)
-                }
+                Button(
+                    onClick = { viewModel.deleteTransaction(tx); transactionToDelete = null },
+                    colors  = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) { Text(if (isLarge) "Ya, Hapus" else "Hapus", color = Color.White) }
             },
             dismissButton = {
                 TextButton(onClick = { transactionToDelete = null }) { Text("Batal") }
-            }
+            },
+            containerColor = if (isLarge)
+                MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.95f)
+            else MaterialTheme.colorScheme.surface
         )
     }
 
@@ -299,8 +384,181 @@ fun TransactionListScreen(
     }
 }
 
-// ── Search top bar ────────────────────────────────────────────────────────────
+// ── Date Filter Dialog ────────────────────────────────────────────────────────
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DateFilterDialog(
+    currentFilter: DateFilter,
+    onApply: (LocalDate?, LocalDate?) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var startDate by remember { mutableStateOf(currentFilter.startDate) }
+    var endDate   by remember { mutableStateOf(currentFilter.endDate) }
+    var showStartPicker by remember { mutableStateOf(false) }
+    var showEndPicker   by remember { mutableStateOf(false) }
 
+    val dateFmt = java.time.format.DateTimeFormatter.ofPattern("dd MMM yyyy",
+        java.util.Locale("id", "ID"))
+
+    // Preset ranges
+    val today     = LocalDate.now()
+    val presets   = listOf(
+        "Hari ini"      to (today to today),
+        "7 hari"        to (today.minusDays(6) to today),
+        "Bulan ini"     to (today.withDayOfMonth(1) to today),
+        "Bulan lalu"    to (today.minusMonths(1).withDayOfMonth(1) to
+                today.minusMonths(1).withDayOfMonth(today.minusMonths(1).lengthOfMonth())),
+        "3 bulan"       to (today.minusMonths(2).withDayOfMonth(1) to today),
+    )
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title   = { Text("Filter Tanggal", fontWeight = FontWeight.Bold) },
+        text    = {
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+
+                // Preset chips
+                Text("Pilih cepat:", style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(presets.size) { i ->
+                        val (label, range) = presets[i]
+                        FilterChip(
+                            selected = startDate == range.first && endDate == range.second,
+                            onClick  = { startDate = range.first; endDate = range.second },
+                            label    = { Text(label, style = MaterialTheme.typography.labelSmall) }
+                        )
+                    }
+                }
+
+                HorizontalDivider()
+
+                // Manual input
+                Text("Atau pilih manual:", style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+                // Tanggal mulai
+                OutlinedCard(
+                    onClick = { showStartPicker = true },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier              = Modifier.padding(12.dp).fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment     = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text("Dari", style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(
+                                startDate?.format(dateFmt) ?: "Pilih tanggal",
+                                style      = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Medium,
+                                color      = if (startDate != null) MaterialTheme.colorScheme.onSurface
+                                else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Icon(Icons.Default.CalendarMonth, null,
+                            tint = MaterialTheme.colorScheme.primary)
+                    }
+                }
+
+                // Tanggal akhir
+                OutlinedCard(
+                    onClick = { showEndPicker = true },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier              = Modifier.padding(12.dp).fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment     = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text("Sampai", style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(
+                                endDate?.format(dateFmt) ?: "Pilih tanggal",
+                                style      = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Medium,
+                                color      = if (endDate != null) MaterialTheme.colorScheme.onSurface
+                                else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Icon(Icons.Default.CalendarMonth, null,
+                            tint = MaterialTheme.colorScheme.primary)
+                    }
+                }
+
+                // Validasi
+                if (startDate != null && endDate != null && startDate!!.isAfter(endDate)) {
+                    Text(
+                        "Tanggal mulai tidak boleh setelah tanggal akhir",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            val isValid = startDate == null || endDate == null || !startDate!!.isAfter(endDate)
+            Button(
+                onClick  = { onApply(startDate, endDate) },
+                enabled  = isValid && (startDate != null || endDate != null)
+            ) { Text("Terapkan") }
+        },
+        dismissButton = {
+            Row {
+                TextButton(onClick = { startDate = null; endDate = null }) {
+                    Text("Reset")
+                }
+                TextButton(onClick = onDismiss) { Text("Batal") }
+            }
+        }
+    )
+
+    // ── Date Pickers ──────────────────────────────────────────────────────────
+    if (showStartPicker) {
+        val pickerState = rememberDatePickerState(
+            initialSelectedDateMillis = startDate?.toEpochDay()?.times(86400000)
+        )
+        DatePickerDialog(
+            onDismissRequest = { showStartPicker = false },
+            confirmButton    = {
+                TextButton(onClick = {
+                    pickerState.selectedDateMillis?.let { millis ->
+                        startDate = LocalDate.ofEpochDay(millis / 86400000)
+                    }
+                    showStartPicker = false
+                }) { Text("OK") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showStartPicker = false }) { Text("Batal") }
+            }
+        ) { DatePicker(state = pickerState) }
+    }
+
+    if (showEndPicker) {
+        val pickerState = rememberDatePickerState(
+            initialSelectedDateMillis = endDate?.toEpochDay()?.times(86400000)
+        )
+        DatePickerDialog(
+            onDismissRequest = { showEndPicker = false },
+            confirmButton    = {
+                TextButton(onClick = {
+                    pickerState.selectedDateMillis?.let { millis ->
+                        endDate = LocalDate.ofEpochDay(millis / 86400000)
+                    }
+                    showEndPicker = false
+                }) { Text("OK") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEndPicker = false }) { Text("Batal") }
+            }
+        ) { DatePicker(state = pickerState) }
+    }
+}
+
+// ── Search top bar ────────────────────────────────────────────────────────────
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SearchTopBar(
@@ -343,7 +601,6 @@ private fun SearchTopBar(
 }
 
 // ── Edit sheet ────────────────────────────────────────────────────────────────
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun EditTransactionSheet(
@@ -431,7 +688,6 @@ private fun EditTransactionSheet(
 }
 
 // ── Transaction item ──────────────────────────────────────────────────────────
-
 @Composable
 private fun TransactionItem(
     transaction: TransactionEntity,
@@ -458,9 +714,7 @@ private fun TransactionItem(
     } ?: Color.Gray
     var showMenu by remember { mutableStateOf(false) }
 
-    // Highlight warna jika item ini cocok dengan query
-    val isHighlighted = searchQuery.isNotBlank()
-    val cardColor = if (isHighlighted)
+    val cardColor = if (searchQuery.isNotBlank())
         MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
     else
         MaterialTheme.colorScheme.surface
@@ -539,7 +793,6 @@ private fun TransactionItem(
 }
 
 // ── Empty state ───────────────────────────────────────────────────────────────
-
 @Composable
 private fun EmptyTransactionState(onAdd: () -> Unit) {
     Box(
@@ -567,7 +820,6 @@ private fun EmptyTransactionState(onAdd: () -> Unit) {
 }
 
 // ── Helper ────────────────────────────────────────────────────────────────────
-
 private fun formatDateHeader(date: String): String {
     return try {
         val parts  = date.split("-")

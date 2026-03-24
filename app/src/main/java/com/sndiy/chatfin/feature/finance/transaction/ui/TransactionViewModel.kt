@@ -39,14 +39,31 @@ data class TransactionFormState(
     val isSaved: Boolean                  = false
 )
 
+data class DateFilter(
+    val startDate: LocalDate? = null,
+    val endDate: LocalDate?   = null
+) {
+    val isActive: Boolean get() = startDate != null || endDate != null
+    val label: String get() = when {
+        startDate != null && endDate != null -> {
+            val fmt = java.time.format.DateTimeFormatter.ofPattern("dd/MM")
+            "${startDate.format(fmt)} - ${endDate.format(fmt)}"
+        }
+        startDate != null -> ">= ${startDate.format(java.time.format.DateTimeFormatter.ofPattern("dd/MM"))}"
+        endDate   != null -> "<= ${endDate.format(java.time.format.DateTimeFormatter.ofPattern("dd/MM"))}"
+        else -> "Semua tanggal"
+    }
+}
+
 data class TransactionListUiState(
     val transactions: List<TransactionEntity>   = emptyList(),
     val wallets: List<WalletEntity>             = emptyList(),
     val expenseCategories: List<CategoryEntity> = emptyList(),
     val incomeCategories: List<CategoryEntity>  = emptyList(),
-    val isLoading: Boolean      = false,
-    val errorMessage: String?   = null,
-    val successMessage: String? = null
+    val dateFilter: DateFilter                  = DateFilter(),
+    val isLoading: Boolean                      = false,
+    val errorMessage: String?                   = null,
+    val successMessage: String?                 = null
 )
 
 @HiltViewModel
@@ -86,7 +103,7 @@ class TransactionViewModel @Inject constructor(
                 categoryRepo.getCategoriesByAccountAndType(accountId, "EXPENSE"),
                 categoryRepo.getCategoriesByAccountAndType(accountId, "INCOME")
             ) { transactions, wallets, expCats, incCats ->
-                TransactionListUiState(
+                _listState.value.copy(
                     transactions      = transactions,
                     wallets           = wallets,
                     expenseCategories = expCats,
@@ -94,6 +111,17 @@ class TransactionViewModel @Inject constructor(
                 )
             }.collect { _listState.value = it }
         }
+    }
+
+    // ── Filter tanggal ────────────────────────────────────────────────────────
+    fun setDateFilter(startDate: LocalDate?, endDate: LocalDate?) {
+        _listState.value = _listState.value.copy(
+            dateFilter = DateFilter(startDate = startDate, endDate = endDate)
+        )
+    }
+
+    fun clearDateFilter() {
+        _listState.value = _listState.value.copy(dateFilter = DateFilter())
     }
 
     // ── Load transaksi untuk diedit ───────────────────────────────────────────
@@ -119,7 +147,6 @@ class TransactionViewModel @Inject constructor(
         )
     }
 
-    // ── Form actions ──────────────────────────────────────────────────────────
     fun onTypeChange(type: TransactionType) {
         _formState.value = _formState.value.copy(
             type             = type,
@@ -174,7 +201,6 @@ class TransactionViewModel @Inject constructor(
         _formState.value = TransactionFormState()
     }
 
-    // ── Simpan (tambah atau edit) ─────────────────────────────────────────────
     fun saveTransaction() {
         val form      = _formState.value
         val accountId = activeAccountId ?: return
@@ -195,7 +221,6 @@ class TransactionViewModel @Inject constructor(
         if (hasError) return
 
         _formState.value = _formState.value.copy(isLoading = true)
-
         viewModelScope.launch {
             try {
                 if (form.editingId != null) {
@@ -226,7 +251,6 @@ class TransactionViewModel @Inject constructor(
         }
     }
 
-    // ── Hapus transaksi ───────────────────────────────────────────────────────
     fun deleteTransaction(transaction: TransactionEntity) {
         viewModelScope.launch {
             try {
@@ -238,7 +262,6 @@ class TransactionViewModel @Inject constructor(
         }
     }
 
-    // ── Hapus dompet ──────────────────────────────────────────────────────────
     fun deleteWallet(wallet: WalletEntity) {
         viewModelScope.launch {
             try {
