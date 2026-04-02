@@ -806,14 +806,14 @@ private fun EmptyTransactionState(onAdd: () -> Unit) {
             Icon(Icons.Default.ReceiptLong, null, Modifier.size(64.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
             Text("Belum ada transaksi", style = MaterialTheme.typography.titleMedium)
             Text(
-                "Chat dengan Mai untuk mencatat transaksi",
+                "Tap tombol + untuk mencatat transaksi pertamamu",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Button(onClick = onAdd) {
-                Icon(Icons.Default.Chat, null)
+                Icon(Icons.Default.Add, null)
                 Spacer(Modifier.width(8.dp))
-                Text("Chat dengan Mai")
+                Text("Tambah Transaksi")
             }
         }
     }
