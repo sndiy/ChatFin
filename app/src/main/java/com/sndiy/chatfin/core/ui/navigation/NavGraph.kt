@@ -43,8 +43,8 @@ data class BottomNavItem(
 
 private val bottomNavItems = listOf(
     BottomNavItem(Screen.Dashboard.route,       "Beranda",  Icons.Default.Home),
-    BottomNavItem(Screen.TransactionList.route, "Riwayat",  Icons.Default.History),
-    BottomNavItem(Screen.Chat.route,            "Chat Mai", Icons.AutoMirrored.Filled.Chat),
+    BottomNavItem(Screen.TransactionList.route,  "Riwayat",  Icons.Default.Receipt),
+    BottomNavItem(Screen.Chat.route,            "Mai",      Icons.Default.AutoAwesome),
     BottomNavItem(Screen.Settings.route,        "Setelan",  Icons.Default.Settings),
 )
 
@@ -94,6 +94,18 @@ fun ChatFinNavGraph(
     }
 
     Scaffold(
+        floatingActionButton = {
+            if (showBottomBar) {
+                FloatingActionButton(
+                    onClick = {
+                        navController.navigate(Screen.TransactionForm.route)
+                    },
+                    containerColor = MaterialTheme.colorScheme.primary
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = "Tambah Transaksi")
+                }
+            }
+        },
         bottomBar = {
             if (showBottomBar) {
                 NavigationBar {
@@ -170,7 +182,13 @@ fun ChatFinNavGraph(
             composable(Screen.TransactionList.route) {
                 TransactionListScreen(
                     onNavigateBack  = { navController.popBackStack() },
-                    onNavigateToAdd = { navController.navigate(Screen.Chat.route) }
+                    onNavigateToAdd = { navController.navigate(Screen.TransactionForm.route) }
+                )
+            }
+
+            composable(Screen.TransactionForm.route) {
+                com.sndiy.chatfin.feature.finance.transaction.ui.TransactionFormScreen(
+                    onNavigateBack = { navController.popBackStack() }
                 )
             }
 

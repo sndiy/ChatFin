@@ -21,6 +21,7 @@ sealed class Screen(val route: String) {
     }
 
     data object CategoryList : Screen("category_list")
+    data object TransactionForm : Screen("transaction_form")
 
     data object SettingsTheme  : Screen("settings_theme")
     data object SettingsBackup : Screen("settings_backup")

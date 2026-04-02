@@ -85,7 +85,7 @@ fun DashboardScreen(
                 title = { Text("Beranda", fontWeight = FontWeight.Bold) },
                 actions = {
                     IconButton(onClick = onNavigateToChat) {
-                        Icon(Icons.Default.Chat, contentDescription = "Chat dengan Mai")
+                        Icon(Icons.Default.AutoAwesome, contentDescription = "Tanya Mai")
                     }
                 }
             )
@@ -134,16 +134,22 @@ fun DashboardScreen(
                             ) {
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                     Icon(
-                                        Icons.Default.Chat, null,
+                                        Icons.Default.AddCircleOutline, null,
                                         modifier = Modifier.size(48.dp),
                                         tint     = MaterialTheme.colorScheme.primary
                                     )
                                     Spacer(Modifier.height(8.dp))
                                     Text("Belum ada transaksi", style = MaterialTheme.typography.bodyLarge)
                                     Text(
-                                        "Ceritakan ke Mai pengeluaranmu hari ini!",
+                                        "Tap tombol + untuk mulai mencatat",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Spacer(Modifier.height(8.dp))
+                                    Text(
+                                        "atau tanya Mai untuk analisis keuanganmu",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                                     )
                                 }
                             }
