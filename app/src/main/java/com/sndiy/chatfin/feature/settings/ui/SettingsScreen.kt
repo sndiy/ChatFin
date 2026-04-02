@@ -84,22 +84,14 @@ fun SettingsScreen(
             )
             SettingsItem(
                 icon = Icons.Default.CloudSync,
-                title = "Akun & Sinkronisasi",
-                subtitle = if (isLoggedIn) "Login sebagai $userEmail" else "Belum login",
-                // FIX: SyncSettings route tidak ada di NavGraph → arahkan ke SettingsBackup
-                // yang sudah handle login, sync upload/download, dan backup
+                title = "Sinkronisasi & Backup",
+                subtitle = if (isLoggedIn) "Login sebagai $userEmail" else "Login untuk sinkronisasi cloud",
                 onClick = { navController.navigate(Screen.SettingsBackup.route) }
-            )
-            SettingsItem(
-                icon     = Icons.Default.SaveAlt,
-                title    = "Data & Backup",
-                subtitle = if (isLoggedIn) "Login sebagai $userEmail" else "Backup lokal & sinkronisasi cloud",
-                onClick  = { navController.navigate(Screen.SettingsBackup.route) }
             )
             SettingsItem(
                 icon = Icons.Default.Info,
                 title = "Tentang ChatFin",
-                subtitle = "Versi 1.6.0",
+                subtitle = "Versi 2.3.0",
                 onClick = { navController.navigate(Screen.SettingsAbout.route) }
             )
         }
