@@ -1,8 +1,11 @@
+// app/src/main/java/com/sndiy/chatfin/core/di/DatabaseModule.kt
+
 package com.sndiy.chatfin.core.di
 
 import android.content.Context
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.sndiy.chatfin.core.data.local.ChatFinDatabase
 import com.sndiy.chatfin.core.data.local.DefaultCategories
@@ -31,6 +34,24 @@ object FirebaseModule {
     fun provideFirestore(): FirebaseFirestore = FirebaseFirestore.getInstance()
 }
 
+// Migration dari v2 ke v3: tambah tabel budgets
+val MIGRATION_2_3 = object : Migration(2, 3) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS budgets (
+                id TEXT NOT NULL PRIMARY KEY,
+                accountId TEXT NOT NULL,
+                categoryId TEXT NOT NULL,
+                limitAmount INTEGER NOT NULL,
+                period TEXT NOT NULL DEFAULT 'MONTHLY',
+                month INTEGER,
+                year INTEGER NOT NULL,
+                createdAt INTEGER NOT NULL
+            )
+        """.trimIndent())
+    }
+}
+
 @Module
 @InstallIn(SingletonComponent::class)
 object DatabaseModule {
@@ -45,7 +66,6 @@ object DatabaseModule {
         val callback = object : RoomDatabase.Callback() {
             override fun onCreate(sqLiteDb: SupportSQLiteDatabase) {
                 super.onCreate(sqLiteDb)
-                // Seed kategori default SEKALI saat pertama install
                 CoroutineScope(Dispatchers.IO).launch {
                     db?.categoryDao()?.insertCategories(DefaultCategories.all)
                 }
@@ -58,6 +78,7 @@ object DatabaseModule {
             "chatfin_database"
         )
             .addCallback(callback)
+            .addMigrations(MIGRATION_2_3)
             .build()
             .also { db = it }
     }
@@ -66,5 +87,5 @@ object DatabaseModule {
     @Provides fun provideWalletDao(db: ChatFinDatabase)      = db.walletDao()
     @Provides fun provideCategoryDao(db: ChatFinDatabase)    = db.categoryDao()
     @Provides fun provideTransactionDao(db: ChatFinDatabase) = db.transactionDao()
-    // provideBudgetDao & provideSavingsGoalDao dihapus
+    @Provides fun provideBudgetDao(db: ChatFinDatabase)      = db.budgetDao()
 }

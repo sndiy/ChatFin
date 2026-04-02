@@ -39,7 +39,6 @@ fun SettingsScreen(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
         )
 
-        // ── Akun Keuangan ─────────────────────────────────────────────────────
         SettingsSection(title = "Akun Keuangan") {
             SettingsItem(
                 icon = Icons.Default.AccountBalance,
@@ -59,9 +58,14 @@ fun SettingsScreen(
                 subtitle = "Kelola kategori transaksi",
                 onClick = { navController.navigate(Screen.CategoryList.route) }
             )
+            SettingsItem(
+                icon = Icons.Default.PieChart,
+                title = "Budget",
+                subtitle = "Atur batas pengeluaran per kategori",
+                onClick = { navController.navigate(Screen.BudgetList.route) }
+            )
         }
 
-        // ── Tampilan ───────────────────────────────────────────────────────────
         SettingsSection(title = "Tampilan") {
             SettingsItem(
                 icon = Icons.Default.Palette,
@@ -71,8 +75,13 @@ fun SettingsScreen(
             )
         }
 
-        // ── Lainnya ───────────────────────────────────────────────────────────
         SettingsSection(title = "Lainnya") {
+            SettingsItem(
+                icon = Icons.Default.FileDownload,
+                title = "Export Laporan",
+                subtitle = "Download CSV atau PDF transaksi",
+                onClick = { navController.navigate(Screen.Export.route) }
+            )
             SettingsItem(
                 icon = Icons.Default.CloudSync,
                 title = "Akun & Sinkronisasi",

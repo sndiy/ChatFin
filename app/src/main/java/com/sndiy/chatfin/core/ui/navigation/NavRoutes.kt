@@ -1,9 +1,12 @@
+// app/src/main/java/com/sndiy/chatfin/core/ui/navigation/NavRoutes.kt
+
 package com.sndiy.chatfin.core.ui.navigation
 
 sealed class Screen(val route: String) {
 
-    data object Splash : Screen("splash")
-    data object Auth   : Screen("auth")
+    data object Splash     : Screen("splash")
+    data object Onboarding : Screen("onboarding")
+    data object Auth       : Screen("auth")
 
     data object Dashboard      : Screen("dashboard")
     data object Chat           : Screen("chat")
@@ -20,8 +23,10 @@ sealed class Screen(val route: String) {
         fun createRoute(walletId: String = "new") = "wallet_form/$walletId"
     }
 
-    data object CategoryList : Screen("category_list")
+    data object CategoryList    : Screen("category_list")
     data object TransactionForm : Screen("transaction_form")
+    data object BudgetList      : Screen("budget_list")
+    data object Export          : Screen("export")
 
     data object SettingsTheme  : Screen("settings_theme")
     data object SettingsBackup : Screen("settings_backup")
