@@ -1,3 +1,11 @@
+// app/src/main/java/com/sndiy/chatfin/core/ui/navigation/NavGraph.kt
+//
+// PERUBAHAN Batch 2:
+// 1. Tambah Onboarding composable route
+// 2. Splash → Onboarding jika first time
+// 3. FAB sekarang buka QuickAddSheet (bukan langsung ke TransactionForm)
+// 4. QuickAdd punya tombol "Form Lengkap" ke TransactionForm
+
 package com.sndiy.chatfin.core.ui.navigation
 
 import androidx.activity.compose.BackHandler
@@ -5,7 +13,6 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -19,16 +26,25 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.*
 import androidx.navigation.navArgument
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.sndiy.chatfin.feature.chat.ui.ChatViewModel
 import com.sndiy.chatfin.feature.chat.ui.ChatScreen
 import com.sndiy.chatfin.feature.auth.ui.AuthScreen
 import com.sndiy.chatfin.feature.finance.account.ui.AccountFormScreen
 import com.sndiy.chatfin.feature.finance.account.ui.AccountListScreen
+import com.sndiy.chatfin.feature.finance.budget.ui.BudgetScreen
+import com.sndiy.chatfin.feature.export.ui.ExportScreen
 import com.sndiy.chatfin.feature.finance.category.ui.CategoryScreen
 import com.sndiy.chatfin.feature.finance.dashboard.ui.DashboardScreen
+import com.sndiy.chatfin.feature.finance.transaction.ui.QuickAddSheet
+import com.sndiy.chatfin.feature.finance.transaction.ui.QuickAddResult
+import com.sndiy.chatfin.feature.finance.transaction.ui.TransactionFormScreen
 import com.sndiy.chatfin.feature.finance.transaction.ui.TransactionListScreen
+import com.sndiy.chatfin.feature.finance.transaction.ui.TransactionViewModel
 import com.sndiy.chatfin.feature.finance.transaction.ui.WalletFormScreen
 import com.sndiy.chatfin.feature.finance.transaction.ui.WalletListScreen
+import com.sndiy.chatfin.feature.onboarding.ui.OnboardingScreen
+import com.sndiy.chatfin.feature.onboarding.ui.OnboardingViewModel
 import com.sndiy.chatfin.feature.settings.backup.DataBackupScreen
 import com.sndiy.chatfin.feature.settings.ui.AboutScreen
 import com.sndiy.chatfin.feature.settings.ui.SettingsScreen
@@ -83,6 +99,12 @@ fun ChatFinNavGraph(
     val isOnBottomNav     = currentRoute in bottomNavRoutes
     val chatViewModel: ChatViewModel = hiltViewModel()
 
+    // QuickAdd sheet state
+    var showQuickAdd by remember { mutableStateOf(false) }
+    // Shared TransactionViewModel untuk QuickAdd
+    val transactionViewModel: TransactionViewModel = hiltViewModel()
+    val txListState by transactionViewModel.listState.collectAsStateWithLifecycle()
+
     BackHandler(enabled = isOnBottomNav) {
         when (currentRoute) {
             Screen.Dashboard.route -> onFinish()
@@ -97,9 +119,7 @@ fun ChatFinNavGraph(
         floatingActionButton = {
             if (showBottomBar) {
                 FloatingActionButton(
-                    onClick = {
-                        navController.navigate(Screen.TransactionForm.route)
-                    },
+                    onClick = { showQuickAdd = true },
                     containerColor = MaterialTheme.colorScheme.primary
                 ) {
                     Icon(Icons.Default.Add, contentDescription = "Tambah Transaksi")
@@ -162,16 +182,39 @@ fun ChatFinNavGraph(
                         }
                     },
                     onNavigateToOnboarding = {
-                        navController.navigate(Screen.Dashboard.route) {
+                        navController.navigate(Screen.Onboarding.route) {
                             popUpTo(Screen.Splash.route) { inclusive = true }
                         }
                     }
                 )
             }
 
+            // ── Onboarding ────────────────────────────────────────────────────
+            composable(Screen.Onboarding.route) {
+                val onboardingVM: OnboardingViewModel = hiltViewModel()
+                val isComplete by onboardingVM.isComplete.collectAsStateWithLifecycle()
+
+                LaunchedEffect(isComplete) {
+                    if (isComplete) {
+                        navController.navigate(Screen.Dashboard.route) {
+                            popUpTo(Screen.Onboarding.route) { inclusive = true }
+                        }
+                    }
+                }
+
+                OnboardingScreen(
+                    onComplete = { name, balance ->
+                        onboardingVM.setupAccount(name, balance)
+                    }
+                )
+            }
+
             // ── Bottom Nav ────────────────────────────────────────────────────
             composable(Screen.Dashboard.route) {
-                DashboardScreen(onNavigateToChat = { navController.navigate(Screen.Chat.route) })
+                DashboardScreen(
+                    onNavigateToChat   = { navController.navigate(Screen.Chat.route) },
+                    onNavigateToBudget = { navController.navigate(Screen.BudgetList.route) }
+                )
             }
             composable(Screen.Chat.route) {
                 ChatScreen(viewModel = chatViewModel)
@@ -186,13 +229,27 @@ fun ChatFinNavGraph(
                 )
             }
 
+            // ── Transaction Form ──────────────────────────────────────────────
             composable(Screen.TransactionForm.route) {
-                com.sndiy.chatfin.feature.finance.transaction.ui.TransactionFormScreen(
+                TransactionFormScreen(
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
+
+            // ── Budget ────────────────────────────────────────────────────────
+            composable(Screen.BudgetList.route) {
+                BudgetScreen(
                     onNavigateBack = { navController.popBackStack() }
                 )
             }
 
             // ── Akun ──────────────────────────────────────────────────────────
+            
+
+            // -- Export Laporan --
+            composable(Screen.Export.route) {
+                ExportScreen(onNavigateBack = { navController.popBackStack() })
+            }
             composable(Screen.AccountList.route) {
                 AccountListScreen(
                     onNavigateBack          = { navController.popBackStack() },
@@ -258,5 +315,26 @@ fun ChatFinNavGraph(
                 )
             }
         }
+    }
+
+    // ── QuickAdd Bottom Sheet ────────────────────────────────────────────────
+    if (showQuickAdd) {
+        QuickAddSheet(
+            expenseCategories = txListState.expenseCategories,
+            incomeCategories  = txListState.incomeCategories,
+            wallets           = txListState.wallets,
+            onSave            = { result ->
+                transactionViewModel.quickAdd(
+                    type       = result.type,
+                    amount     = result.amount,
+                    categoryId = result.categoryId,
+                    walletId   = result.walletId,
+                    note       = result.note
+                )
+                showQuickAdd = false
+            },
+            onDismiss  = { showQuickAdd = false },
+            onFullForm = { navController.navigate(Screen.TransactionForm.route) }
+        )
     }
 }

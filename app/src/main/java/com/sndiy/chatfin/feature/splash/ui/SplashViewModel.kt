@@ -1,7 +1,15 @@
+// app/src/main/java/com/sndiy/chatfin/feature/splash/ui/SplashViewModel.kt
+//
+// PERUBAHAN: Cek onboardingDone dari AppPreferences
+// - Jika belum onboarding → Onboarding
+// - Jika sudah onboarding tapi belum ada akun → Onboarding (fallback)
+// - Jika sudah ada akun → Dashboard
+
 package com.sndiy.chatfin.feature.splash.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.sndiy.chatfin.core.data.local.AppPreferences
 import com.sndiy.chatfin.feature.finance.account.data.repository.AccountRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.delay
@@ -20,7 +28,8 @@ sealed class SplashDestination {
 
 @HiltViewModel
 class SplashViewModel @Inject constructor(
-    private val accountRepo: AccountRepository
+    private val accountRepo: AccountRepository,
+    private val appPreferences: AppPreferences
 ) : ViewModel() {
 
     private val _destination = MutableStateFlow<SplashDestination>(SplashDestination.Loading)
@@ -28,18 +37,17 @@ class SplashViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            // Minimum splash 1.5 detik agar animasi terlihat
             val minSplashJob = launch { delay(1500) }
 
-            val account = accountRepo.getActiveAccount().first()
+            val onboardingDone = appPreferences.onboardingDone.first()
+            val account        = accountRepo.getActiveAccount().first()
 
-            // Tunggu minimum splash selesai
             minSplashJob.join()
 
-            _destination.value = if (account != null) {
-                SplashDestination.Dashboard
-            } else {
-                SplashDestination.Onboarding
+            _destination.value = when {
+                !onboardingDone       -> SplashDestination.Onboarding
+                account != null       -> SplashDestination.Dashboard
+                else                  -> SplashDestination.Onboarding
             }
         }
     }

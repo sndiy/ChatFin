@@ -1,3 +1,10 @@
+// app/src/main/java/com/sndiy/chatfin/feature/finance/dashboard/ui/DashboardViewModel.kt
+//
+// PERUBAHAN:
+// 1. Inject BudgetRepository
+// 2. Tambah budgetOverview (List<BudgetWithSpent>) ke DashboardUiState
+// 3. Observe budgets di observeDashboard()
+
 package com.sndiy.chatfin.feature.finance.dashboard.ui
 
 import androidx.lifecycle.ViewModel
@@ -9,6 +16,8 @@ import com.sndiy.chatfin.feature.finance.analytics.ui.AnalyticsPeriod
 import com.sndiy.chatfin.feature.finance.analytics.ui.CategorySlice
 import com.sndiy.chatfin.feature.finance.analytics.ui.DailyExpensePoint
 import com.sndiy.chatfin.feature.finance.analytics.ui.MonthlyBarEntry
+import com.sndiy.chatfin.feature.finance.budget.data.repository.BudgetRepository
+import com.sndiy.chatfin.feature.finance.budget.data.repository.BudgetWithSpent
 import com.sndiy.chatfin.feature.finance.transaction.data.repository.CategoryRepository
 import com.sndiy.chatfin.feature.finance.transaction.data.repository.TransactionRepository
 import com.sndiy.chatfin.feature.finance.transaction.data.repository.WalletRepository
@@ -48,7 +57,10 @@ data class DashboardUiState(
     val analyticsNet: Long                           = 0L,
     val dailyExpensePoints: List<DailyExpensePoint>  = emptyList(),
     val categorySlices: List<CategorySlice>          = emptyList(),
-    val monthlyBarEntries: List<MonthlyBarEntry>     = emptyList()
+    val monthlyBarEntries: List<MonthlyBarEntry>     = emptyList(),
+    // BARU: Budget overview
+    val budgetOverview: List<BudgetWithSpent>        = emptyList(),
+    val hasBudgets: Boolean                          = false
 )
 
 @HiltViewModel
@@ -57,6 +69,7 @@ class DashboardViewModel @Inject constructor(
     private val walletRepo: WalletRepository,
     private val transactionRepo: TransactionRepository,
     private val categoryRepo: CategoryRepository,
+    private val budgetRepo: BudgetRepository,
     private val syncEventBus: SyncEventBus
 ) : ViewModel() {
 
@@ -66,7 +79,6 @@ class DashboardViewModel @Inject constructor(
     private val _selectedPeriod = MutableStateFlow(AnalyticsPeriod.THIS_MONTH)
     private val monthShort      = DateTimeFormatter.ofPattern("MMM")
 
-    // FIX: simpan Job supaya bisa dibatalkan saat sync selesai
     private var dashboardJob: Job? = null
     private var analyticsJob: Job? = null
 
@@ -76,14 +88,12 @@ class DashboardViewModel @Inject constructor(
     }
 
     private fun startObservers() {
-        // Batalkan job lama sebelum buat yang baru
         dashboardJob?.cancel()
         analyticsJob?.cancel()
         dashboardJob = observeDashboard()
         analyticsJob = observeAnalytics()
     }
 
-    // FIX: observeSyncEvent hanya restart observer, tidak buat duplikat
     private fun observeSyncEvent() {
         viewModelScope.launch {
             syncEventBus.syncCompleted.collect {
@@ -114,14 +124,16 @@ class DashboardViewModel @Inject constructor(
                     walletRepo.getWalletsByAccount(account.id),
                     transactionRepo.getTotalIncome(account.id, now.withDayOfMonth(1), now),
                     transactionRepo.getTotalExpense(account.id, now.withDayOfMonth(1), now),
-                    transactionRepo.getTransactionsByAccount(account.id)
-                ) { wallets, income, expense, transactions ->
+                    transactionRepo.getTransactionsByAccount(account.id),
+                    budgetRepo.getBudgetsByAccountAndPeriod(account.id, now.year, now.monthValue)
+                ) { wallets, income, expense, transactions, budgets ->
                     DashboardRawData(
                         accountId    = account.id,
                         wallets      = wallets,
                         income       = income ?: 0L,
                         expense      = expense ?: 0L,
-                        transactions = transactions
+                        transactions = transactions,
+                        budgets      = budgets
                     )
                 }
             }
@@ -130,6 +142,7 @@ class DashboardViewModel @Inject constructor(
                 val incCats   = categoryRepo.getCategoriesByAccountAndType(raw.accountId, "INCOME").first()
                 val catMap    = (expCats + incCats).associate { it.id to it.name }
                 val walletMap = raw.wallets.associate { it.id to it.name }
+                val catColorMap = expCats.associate { it.id to it.colorHex }
 
                 val recent = raw.transactions.take(3).map { tx ->
                     TransactionDisplay(
@@ -144,6 +157,20 @@ class DashboardViewModel @Inject constructor(
                     )
                 }
 
+                // Build budget overview (top 3 yang paling mendekati/melebihi limit)
+                val now = LocalDate.now()
+                val startDate = now.withDayOfMonth(1)
+                val endDate = now
+                val budgetOverview = raw.budgets.map { budget ->
+                    val spent = budgetRepo.getSpentForCategory(raw.accountId, budget.categoryId, startDate, endDate)
+                    BudgetWithSpent(
+                        budget        = budget,
+                        spent         = spent,
+                        categoryName  = catMap[budget.categoryId] ?: budget.categoryId,
+                        categoryColor = catColorMap[budget.categoryId] ?: "#888888"
+                    )
+                }.sortedByDescending { it.percentage }.take(3)
+
                 _uiState.update {
                     it.copy(
                         isLoading          = false,
@@ -151,7 +178,9 @@ class DashboardViewModel @Inject constructor(
                         monthlyIncome      = raw.income,
                         monthlyExpense     = raw.expense,
                         wallets            = raw.wallets,
-                        recentTransactions = recent
+                        recentTransactions = recent,
+                        budgetOverview     = budgetOverview,
+                        hasBudgets         = raw.budgets.isNotEmpty()
                     )
                 }
             }
@@ -223,7 +252,6 @@ class DashboardViewModel @Inject constructor(
             }
     }
 
-    // FIX: query paralel pakai coroutineScope
     private suspend fun buildMonthlyEntries(
         accountId: String,
         period: AnalyticsPeriod
@@ -272,7 +300,8 @@ data class DashboardRawData(
     val wallets: List<com.sndiy.chatfin.core.data.local.entity.WalletEntity>,
     val income: Long,
     val expense: Long,
-    val transactions: List<com.sndiy.chatfin.core.data.local.entity.TransactionEntity>
+    val transactions: List<com.sndiy.chatfin.core.data.local.entity.TransactionEntity>,
+    val budgets: List<com.sndiy.chatfin.core.data.local.entity.BudgetEntity> = emptyList()
 )
 
 private data class AnalyticsRawData(

@@ -1,4 +1,8 @@
 // app/src/main/java/com/sndiy/chatfin/feature/finance/transaction/data/repository/TransactionRepository.kt
+//
+// PERUBAHAN dari versi sebelumnya:
+// 1. Tambah updateTransaction() — rollback saldo lama, apply saldo baru
+// 2. Tambah searchTransactions() — query dengan LIKE untuk search
 
 package com.sndiy.chatfin.feature.finance.transaction.data.repository
 
@@ -73,10 +77,10 @@ class TransactionRepository @Inject constructor(
     suspend fun getTransactionById(id: String): TransactionEntity? =
         transactionDao.getTransactionById(id)
 
-    // Tambah transaksi + update saldo dompet otomatis
+    // ── Tambah transaksi + update saldo dompet otomatis ──────────────────────
     suspend fun addTransaction(
         accountId: String,
-        type: String,           // INCOME | EXPENSE | TRANSFER
+        type: String,
         amount: Long,
         categoryId: String,
         walletId: String,
@@ -104,8 +108,64 @@ class TransactionRepository @Inject constructor(
             recurringInterval = recurringInterval
         )
         transactionDao.insertTransaction(transaction)
+        applyBalanceEffect(type, walletId, toWalletId, amount)
+    }
 
-        // Update saldo dompet sesuai tipe transaksi
+    // ── BARU: Update transaksi dengan rollback + apply saldo ─────────────────
+    suspend fun updateTransaction(
+        oldTransaction: TransactionEntity,
+        newType: String,
+        newAmount: Long,
+        newCategoryId: String,
+        newWalletId: String,
+        newToWalletId: String? = null,
+        newNote: String? = null,
+        newDate: LocalDate,
+        newTime: LocalTime
+    ) {
+        // 1. Rollback efek saldo dari transaksi lama
+        rollbackBalanceEffect(
+            oldTransaction.type,
+            oldTransaction.walletId,
+            oldTransaction.toWalletId,
+            oldTransaction.amount
+        )
+
+        // 2. Update entity di database
+        val updated = oldTransaction.copy(
+            type       = newType,
+            amount     = newAmount,
+            categoryId = newCategoryId,
+            walletId   = newWalletId,
+            toWalletId = newToWalletId,
+            note       = newNote,
+            date       = newDate.format(dateFormatter),
+            time       = newTime.format(timeFormatter)
+        )
+        transactionDao.updateTransaction(updated)
+
+        // 3. Apply efek saldo dari transaksi baru
+        applyBalanceEffect(newType, newWalletId, newToWalletId, newAmount)
+    }
+
+    // ── Hapus transaksi + rollback saldo dompet ──────────────────────────────
+    suspend fun deleteTransaction(transaction: TransactionEntity) {
+        transactionDao.deleteTransaction(transaction)
+        rollbackBalanceEffect(
+            transaction.type,
+            transaction.walletId,
+            transaction.toWalletId,
+            transaction.amount
+        )
+    }
+
+    // ── Helper: apply balance effect ─────────────────────────────────────────
+    private suspend fun applyBalanceEffect(
+        type: String,
+        walletId: String,
+        toWalletId: String?,
+        amount: Long
+    ) {
         when (type) {
             "INCOME"   -> walletDao.addToBalance(walletId, amount)
             "EXPENSE"  -> walletDao.subtractFromBalance(walletId, amount)
@@ -116,19 +176,19 @@ class TransactionRepository @Inject constructor(
         }
     }
 
-    // Hapus transaksi + rollback saldo dompet
-    suspend fun deleteTransaction(transaction: TransactionEntity) {
-        transactionDao.deleteTransaction(transaction)
-
-        // Rollback saldo
-        when (transaction.type) {
-            "INCOME"   -> walletDao.subtractFromBalance(transaction.walletId, transaction.amount)
-            "EXPENSE"  -> walletDao.addToBalance(transaction.walletId, transaction.amount)
+    // ── Helper: rollback balance effect ──────────────────────────────────────
+    private suspend fun rollbackBalanceEffect(
+        type: String,
+        walletId: String,
+        toWalletId: String?,
+        amount: Long
+    ) {
+        when (type) {
+            "INCOME"   -> walletDao.subtractFromBalance(walletId, amount)
+            "EXPENSE"  -> walletDao.addToBalance(walletId, amount)
             "TRANSFER" -> {
-                walletDao.addToBalance(transaction.walletId, transaction.amount)
-                transaction.toWalletId?.let {
-                    walletDao.subtractFromBalance(it, transaction.amount)
-                }
+                walletDao.addToBalance(walletId, amount)
+                toWalletId?.let { walletDao.subtractFromBalance(it, amount) }
             }
         }
     }

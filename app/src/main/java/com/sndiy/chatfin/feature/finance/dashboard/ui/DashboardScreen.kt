@@ -45,6 +45,7 @@ import com.patrykandpatrick.vico.core.common.shape.CorneredShape
 import com.sndiy.chatfin.core.data.local.entity.WalletEntity
 import com.sndiy.chatfin.core.ui.theme.ExpenseRed
 import com.sndiy.chatfin.core.ui.theme.IncomeGreen
+import com.sndiy.chatfin.feature.finance.dashboard.ui.BudgetOverviewSection
 import com.sndiy.chatfin.feature.finance.analytics.ui.AnalyticsPeriod
 import com.sndiy.chatfin.feature.finance.analytics.ui.CategorySlice
 import com.sndiy.chatfin.feature.finance.analytics.ui.DailyExpensePoint
@@ -61,6 +62,7 @@ private val donutColors = listOf(
 @Composable
 fun DashboardScreen(
     onNavigateToChat: () -> Unit = {},
+    onNavigateToBudget: () -> Unit = {},
     viewModel: DashboardViewModel = hiltViewModel()
 ) {
     val uiState        by viewModel.uiState.collectAsStateWithLifecycle()
@@ -112,6 +114,15 @@ fun DashboardScreen(
 
                 // ── Dompet ────────────────────────────────────────────────────
                 item { WalletsSection(wallets = uiState.wallets) }
+
+                // -- Budget Overview --
+                item {
+                    BudgetOverviewSection(
+                        budgets            = uiState.budgetOverview,
+                        hasBudgets         = uiState.hasBudgets,
+                        onNavigateToBudget = onNavigateToBudget
+                    )
+                }
 
                 // ── Transaksi terbaru ─────────────────────────────────────────
                 if (uiState.recentTransactions.isNotEmpty()) {
