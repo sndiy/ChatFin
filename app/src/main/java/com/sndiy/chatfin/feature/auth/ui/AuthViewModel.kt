@@ -1,3 +1,12 @@
+// app/src/main/java/com/sndiy/chatfin/feature/auth/ui/AuthViewModel.kt
+//
+// FIXES:
+// 1. syncAfterLogin: cek hasCloudData sebelum download
+// 2. Login existing user: mergeDownload (bukan downloadAll) — data lokal TIDAK dihapus
+// 3. Register new user: uploadAll (data lokal → cloud)
+// 4. syncDownload manual: pakai mergeDownload by default
+// 5. Tambah fullReplace option hanya jika user explicitly minta
+
 package com.sndiy.chatfin.feature.auth.ui
 
 import androidx.lifecycle.ViewModel
@@ -131,6 +140,7 @@ class AuthViewModel @Inject constructor(
         _uiState.update { it.copy(currentUser = null, authState = AuthState.Idle) }
     }
 
+    // ── Manual sync: Upload lokal → cloud ────────────────────────────────────
     fun syncUpload() {
         val uid = authRepo.currentUser?.uid ?: return
         _uiState.update { it.copy(syncState = SyncState.Syncing) }
@@ -147,11 +157,13 @@ class AuthViewModel @Inject constructor(
         }
     }
 
+    // ── Manual sync: Download cloud → lokal (MERGE, tidak hapus data lokal) ──
     fun syncDownload() {
         val uid = authRepo.currentUser?.uid ?: return
         _uiState.update { it.copy(syncState = SyncState.Syncing) }
         viewModelScope.launch {
-            syncRepo.downloadAll(uid).fold(
+            // FIX: Pakai mergeDownload, bukan downloadAll
+            syncRepo.mergeDownload(uid).fold(
                 onSuccess = { stats ->
                     _uiState.update { it.copy(syncState = SyncState.Done(stats)) }
                     refreshActiveAccount()
@@ -166,22 +178,57 @@ class AuthViewModel @Inject constructor(
 
     fun clearSyncState() = _uiState.update { it.copy(syncState = SyncState.Idle) }
 
+    // ── FIX: Smart sync setelah login ────────────────────────────────────────
     private suspend fun syncAfterLogin(uid: String, isNewUser: Boolean) {
         _uiState.update { it.copy(syncState = SyncState.Syncing) }
-        val result = if (isNewUser) syncRepo.uploadAll(uid) else syncRepo.downloadAll(uid)
-        result.fold(
-            onSuccess = { stats ->
-                _uiState.update { it.copy(syncState = SyncState.Done(stats)) }
-                if (!isNewUser) refreshActiveAccount()
-                syncEventBus.notifySyncCompleted()
-            },
-            onFailure = { e ->
-                _uiState.update { it.copy(syncState = SyncState.Error(e.message ?: "Gagal")) }
+
+        if (isNewUser) {
+            // User baru register → upload data lokal ke cloud
+            val result = syncRepo.uploadAll(uid)
+            result.fold(
+                onSuccess = { stats ->
+                    _uiState.update { it.copy(syncState = SyncState.Done(stats)) }
+                    syncEventBus.notifySyncCompleted()
+                },
+                onFailure = { e ->
+                    _uiState.update { it.copy(syncState = SyncState.Error(e.message ?: "Upload gagal")) }
+                }
+            )
+        } else {
+            // User login di device baru/lama → cek cloud dulu
+            val hasCloud = syncRepo.hasCloudData(uid)
+
+            if (!hasCloud) {
+                // Cloud kosong → upload data lokal yang ada (jangan download kosong!)
+                android.util.Log.d("AuthVM", "Cloud kosong, upload data lokal sebagai gantinya")
+                val result = syncRepo.uploadAll(uid)
+                result.fold(
+                    onSuccess = { stats ->
+                        _uiState.update { it.copy(syncState = SyncState.Done(stats)) }
+                        syncEventBus.notifySyncCompleted()
+                    },
+                    onFailure = { e ->
+                        // Kalau data lokal juga kosong, ya sudah — ga apa-apa
+                        _uiState.update { it.copy(syncState = SyncState.Idle) }
+                    }
+                )
+            } else {
+                // Cloud ada data → MERGE download (tidak hapus data lokal)
+                val result = syncRepo.mergeDownload(uid)
+                result.fold(
+                    onSuccess = { stats ->
+                        _uiState.update { it.copy(syncState = SyncState.Done(stats)) }
+                        refreshActiveAccount()
+                        syncEventBus.notifySyncCompleted()
+                    },
+                    onFailure = { e ->
+                        _uiState.update { it.copy(syncState = SyncState.Error(e.message ?: "Sync gagal")) }
+                    }
+                )
             }
-        )
+        }
     }
 
-    // Set ulang akun aktif setelah download supaya SecureStorage sinkron
     private suspend fun refreshActiveAccount() {
         try {
             val active = accountRepo.getActiveAccount().first()

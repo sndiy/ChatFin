@@ -86,7 +86,9 @@ fun SettingsScreen(
                 icon = Icons.Default.CloudSync,
                 title = "Akun & Sinkronisasi",
                 subtitle = if (isLoggedIn) "Login sebagai $userEmail" else "Belum login",
-                onClick = { navController.navigate(Screen.SyncSettings.route) }
+                // FIX: SyncSettings route tidak ada di NavGraph → arahkan ke SettingsBackup
+                // yang sudah handle login, sync upload/download, dan backup
+                onClick = { navController.navigate(Screen.SettingsBackup.route) }
             )
             SettingsItem(
                 icon     = Icons.Default.SaveAlt,
