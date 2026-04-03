@@ -18,6 +18,9 @@ import androidx.navigation.NavController
 import com.sndiy.chatfin.core.ui.navigation.Screen
 import com.sndiy.chatfin.feature.auth.ui.AuthViewModel
 
+// FIX BUG 4: Tambah Scaffold + TopAppBar agar konsisten dengan Dashboard/Riwayat/Chat
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     navController: NavController,
@@ -27,76 +30,78 @@ fun SettingsScreen(
     val isLoggedIn = authState.currentUser != null
     val userEmail  = authState.currentUser?.email ?: ""
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-    ) {
-        Text(
-            text = "Setelan",
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
-        )
-
-        SettingsSection(title = "Akun Keuangan") {
-            SettingsItem(
-                icon = Icons.Default.AccountBalance,
-                title = "Kelola Akun",
-                subtitle = "Tambah, edit, atau hapus akun",
-                onClick = { navController.navigate(Screen.AccountList.route) }
-            )
-            SettingsItem(
-                icon = Icons.Default.AccountBalanceWallet,
-                title = "Dompet & Rekening",
-                subtitle = "Atur dompet di akun aktif",
-                onClick = { navController.navigate(Screen.WalletList.route) }
-            )
-            SettingsItem(
-                icon = Icons.Default.Category,
-                title = "Kategori",
-                subtitle = "Kelola kategori transaksi",
-                onClick = { navController.navigate(Screen.CategoryList.route) }
-            )
-            SettingsItem(
-                icon = Icons.Default.PieChart,
-                title = "Budget",
-                subtitle = "Atur batas pengeluaran per kategori",
-                onClick = { navController.navigate(Screen.BudgetList.route) }
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Setelan", fontWeight = FontWeight.Bold) }
             )
         }
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .verticalScroll(rememberScrollState())
+        ) {
+            SettingsSection(title = "Akun Keuangan") {
+                SettingsItem(
+                    icon = Icons.Default.AccountBalance,
+                    title = "Kelola Akun",
+                    subtitle = "Tambah, edit, atau hapus akun",
+                    onClick = { navController.navigate(Screen.AccountList.route) }
+                )
+                SettingsItem(
+                    icon = Icons.Default.AccountBalanceWallet,
+                    title = "Dompet & Rekening",
+                    subtitle = "Atur dompet di akun aktif",
+                    onClick = { navController.navigate(Screen.WalletList.route) }
+                )
+                SettingsItem(
+                    icon = Icons.Default.Category,
+                    title = "Kategori",
+                    subtitle = "Kelola kategori transaksi",
+                    onClick = { navController.navigate(Screen.CategoryList.route) }
+                )
+                SettingsItem(
+                    icon = Icons.Default.PieChart,
+                    title = "Budget",
+                    subtitle = "Atur batas pengeluaran per kategori",
+                    onClick = { navController.navigate(Screen.BudgetList.route) }
+                )
+            }
 
-        SettingsSection(title = "Tampilan") {
-            SettingsItem(
-                icon = Icons.Default.Palette,
-                title = "Tema",
-                subtitle = "Atur warna dan tampilan app",
-                onClick = { navController.navigate(Screen.SettingsTheme.route) }
-            )
+            SettingsSection(title = "Tampilan") {
+                SettingsItem(
+                    icon = Icons.Default.Palette,
+                    title = "Tema",
+                    subtitle = "Atur warna dan tampilan app",
+                    onClick = { navController.navigate(Screen.SettingsTheme.route) }
+                )
+            }
+
+            SettingsSection(title = "Lainnya") {
+                SettingsItem(
+                    icon = Icons.Default.FileDownload,
+                    title = "Export Laporan",
+                    subtitle = "Download CSV atau PDF transaksi",
+                    onClick = { navController.navigate(Screen.Export.route) }
+                )
+                SettingsItem(
+                    icon = Icons.Default.CloudSync,
+                    title = "Sinkronisasi & Backup",
+                    subtitle = if (isLoggedIn) "Login sebagai $userEmail" else "Login untuk sinkronisasi cloud",
+                    onClick = { navController.navigate(Screen.SettingsBackup.route) }
+                )
+                SettingsItem(
+                    icon = Icons.Default.Info,
+                    title = "Tentang ChatFin",
+                    subtitle = "Versi 1.6.0",
+                    onClick = { navController.navigate(Screen.SettingsAbout.route) }
+                )
+            }
+
+            Spacer(modifier = Modifier.height(32.dp))
         }
-
-        SettingsSection(title = "Lainnya") {
-            SettingsItem(
-                icon = Icons.Default.FileDownload,
-                title = "Export Laporan",
-                subtitle = "Download CSV atau PDF transaksi",
-                onClick = { navController.navigate(Screen.Export.route) }
-            )
-            SettingsItem(
-                icon = Icons.Default.CloudSync,
-                title = "Sinkronisasi & Backup",
-                subtitle = if (isLoggedIn) "Login sebagai $userEmail" else "Login untuk sinkronisasi cloud",
-                onClick = { navController.navigate(Screen.SettingsBackup.route) }
-            )
-            SettingsItem(
-                icon = Icons.Default.Info,
-                title = "Tentang ChatFin",
-                subtitle = "Versi 2.3.0",
-                onClick = { navController.navigate(Screen.SettingsAbout.route) }
-            )
-        }
-
-        Spacer(modifier = Modifier.height(32.dp))
     }
 }
 
