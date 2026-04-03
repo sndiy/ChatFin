@@ -95,7 +95,7 @@ fun SettingsScreen(
                 SettingsItem(
                     icon = Icons.Default.Info,
                     title = "Tentang ChatFin",
-                    subtitle = "Versi 1.6.0",
+                    subtitle = "Versi 2.3.1",
                     onClick = { navController.navigate(Screen.SettingsAbout.route) }
                 )
             }
