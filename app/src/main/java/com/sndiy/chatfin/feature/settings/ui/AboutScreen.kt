@@ -64,7 +64,7 @@ fun AboutScreen(onNavigateBack: () -> Unit) {
                     color      = MaterialTheme.colorScheme.primary
                 )
                 Text(
-                    "Versi 2.3.0",
+                    "Versi 2.3.1",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
