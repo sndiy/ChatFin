@@ -19,3 +19,21 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# ============================================================================
+#  Strip logging verbose/debug/info dari release build
+# ============================================================================
+# ChatFin mencetak data keuangan ke logcat lewat Log.d (jumlah transaksi,
+# nama model, status sync). Tanpa aturan ini semua Log.* ikut terkompilasi ke
+# release dan bisa dibaca aplikasi lain / adb logcat.
+#
+# Log.w dan Log.e SENGAJA dipertahankan — dibutuhkan untuk diagnosa crash.
+# Konsekuensinya: jangan pernah menaruh nilai finansial atau API key di Log.w/e.
+#
+# Catatan: -assumenosideeffects hanya bekerja saat optimisasi aktif. Build ini
+# memakai proguard-android-optimize.txt, jadi syaratnya terpenuhi.
+-assumenosideeffects class android.util.Log {
+    public static *** v(...);
+    public static *** d(...);
+    public static *** i(...);
+}

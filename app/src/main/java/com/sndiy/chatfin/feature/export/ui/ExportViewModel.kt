@@ -5,6 +5,7 @@ package com.sndiy.chatfin.feature.export.ui
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.sndiy.chatfin.core.domain.PeriodRange
 import com.sndiy.chatfin.feature.export.data.ExportRepository
 import com.sndiy.chatfin.feature.finance.account.data.repository.AccountRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -75,18 +76,12 @@ class ExportViewModel @Inject constructor(
         _uiState.update { it.copy(successMessage = null, errorMessage = null) }
     }
 
-    private fun periodToRange(period: ExportPeriod): Pair<LocalDate, LocalDate> {
-        val today = LocalDate.now()
-        return when (period) {
-            ExportPeriod.THIS_MONTH    -> today.withDayOfMonth(1) to today
-            ExportPeriod.LAST_MONTH    -> {
-                val start = today.minusMonths(1).withDayOfMonth(1)
-                start to start.plusMonths(1).minusDays(1)
-            }
-            ExportPeriod.LAST_3_MONTHS -> today.minusMonths(3).withDayOfMonth(1) to today
-            ExportPeriod.LAST_6_MONTHS -> today.minusMonths(6).withDayOfMonth(1) to today
-            ExportPeriod.THIS_YEAR     -> today.withDayOfYear(1) to today
-            ExportPeriod.ALL           -> LocalDate.of(2020, 1, 1) to today
-        }
+    private fun periodToRange(period: ExportPeriod): Pair<LocalDate, LocalDate> = when (period) {
+        ExportPeriod.THIS_MONTH    -> PeriodRange.thisMonth()
+        ExportPeriod.LAST_MONTH    -> PeriodRange.lastMonth()
+        ExportPeriod.LAST_3_MONTHS -> PeriodRange.lastNMonths(3)
+        ExportPeriod.LAST_6_MONTHS -> PeriodRange.lastNMonths(6)
+        ExportPeriod.THIS_YEAR     -> PeriodRange.thisYear()
+        ExportPeriod.ALL           -> PeriodRange.since(LocalDate.of(2020, 1, 1))
     }
 }

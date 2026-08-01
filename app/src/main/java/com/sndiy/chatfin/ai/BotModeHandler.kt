@@ -2,6 +2,9 @@ package com.sndiy.chatfin.ai
 
 import com.sndiy.chatfin.core.data.local.entity.CategoryEntity
 import com.sndiy.chatfin.core.data.local.entity.WalletEntity
+import com.sndiy.chatfin.core.parser.AmountParser
+import com.sndiy.chatfin.core.parser.ParsedDraft
+import com.sndiy.chatfin.core.persona.PersonaVoice
 import java.text.NumberFormat
 import java.util.Locale
 import javax.inject.Inject
@@ -13,17 +16,12 @@ sealed class BotStep {
     data class WaitCategory(val type: String, val amount: Long) : BotStep()
     data class WaitWallet(val type: String, val amount: Long, val category: String) : BotStep()
     data class WaitDesc(val type: String, val amount: Long, val category: String, val wallet: String) : BotStep()
-    data class WaitConfirm(
-        val type: String, val amount: Long,
-        val category: String, val wallet: String, val desc: String
-    ) : BotStep()
 }
 
 data class BotResult(
     val text: String,
-    val option: ChatOption?           = null,
-    val saveTransaction: SaveRequest? = null,
-    val nextStep: BotStep             = BotStep.Idle,
+    val option: ChatOption? = null,
+    val nextStep: BotStep   = BotStep.Idle,
     // Signal ke ViewModel: minta AI buat kalimat konfirmasi
     val requestAiConfirm: AiConfirmRequest? = null
 )
@@ -33,14 +31,6 @@ data class AiConfirmRequest(
     val amount: Long,
     val category: String,
     val wallet: String,
-    val desc: String
-)
-
-data class SaveRequest(
-    val type: String,
-    val amount: Long,
-    val categoryName: String,
-    val walletName: String,
     val desc: String
 )
 
@@ -56,13 +46,14 @@ class BotModeHandler @Inject constructor() {
         wallets: List<WalletEntity>,
         expenseCategories: List<CategoryEntity>,
         incomeCategories: List<CategoryEntity>,
-        totalBalance: Long
+        totalBalance: Long,
+        voice: PersonaVoice
     ): BotResult {
         val raw = input.trim()
         val cmd = raw.lowercase().trimStart('/')
 
         if (currentStep !is BotStep.Idle) {
-            return handleStep(currentStep, raw, wallets, expenseCategories, incomeCategories)
+            return handleStep(currentStep, raw, wallets, expenseCategories, incomeCategories, voice)
         }
 
         return when {
@@ -72,9 +63,9 @@ class BotModeHandler @Inject constructor() {
                 val inline = raw.substringAfter(" ", "").trim()
                 val amount = parseAmount(inline)
                 when {
-                    inline.isNotBlank() && amount != null -> askCategory("INCOME", amount, incomeCategories)
+                    inline.isNotBlank() && amount != null -> askCategory("INCOME", amount, incomeCategories, voice)
                     inline.isNotBlank() -> BotResult("Nominal tidak valid. Contoh: setor 50rb", nextStep = BotStep.Idle)
-                    else -> BotResult("💰 Berapa jumlah yang mau disetor?", nextStep = BotStep.WaitAmount("INCOME"))
+                    else -> BotResult(voice.askAmountIncome, nextStep = BotStep.WaitAmount("INCOME"))
                 }
             }
 
@@ -82,9 +73,9 @@ class BotModeHandler @Inject constructor() {
                 val inline = raw.substringAfter(" ", "").trim()
                 val amount = parseAmount(inline)
                 when {
-                    inline.isNotBlank() && amount != null -> askCategory("EXPENSE", amount, expenseCategories)
+                    inline.isNotBlank() && amount != null -> askCategory("EXPENSE", amount, expenseCategories, voice)
                     inline.isNotBlank() -> BotResult("Nominal tidak valid. Contoh: tarik 30rb", nextStep = BotStep.Idle)
-                    else -> BotResult("💸 Berapa jumlah yang mau ditarik?", nextStep = BotStep.WaitAmount("EXPENSE"))
+                    else -> BotResult(voice.askAmountExpense, nextStep = BotStep.WaitAmount("EXPENSE"))
                 }
             }
 
@@ -105,12 +96,39 @@ class BotModeHandler @Inject constructor() {
         }
     }
 
+    // ── Masuk wizard dari hasil TransactionParser (M7) ────────────────────────
+    // Beda dengan handle(input, ...) yang selalu mulai dari command mentah,
+    // fungsi ini menerima draft yang SUDAH tahu amount (selalu, baik Complete
+    // maupun Partial dari TransactionParser) dan kadang juga sudah tahu
+    // kategori (Complete) — jadi step yang sudah terjawab oleh parser dilompati,
+    // bukan ditanya ulang. Judul (title) TETAP ditanya di WaitDesc seperti
+    // biasa — parser sudah menebak judul dari sisa teks, tapi user tetap
+    // diberi kesempatan mengoreksi/menambah detail sebelum disimpan.
+    fun handleParsed(
+        draft: ParsedDraft,
+        wallets: List<WalletEntity>,
+        expenseCategories: List<CategoryEntity>,
+        incomeCategories: List<CategoryEntity>,
+        voice: PersonaVoice
+    ): BotResult {
+        val type   = draft.type ?: "EXPENSE"
+        val amount = draft.amount ?: return BotResult("Nominal tidak dikenali 🤔", nextStep = BotStep.Idle)
+        val cats   = if (type == "INCOME") incomeCategories else expenseCategories
+
+        return if (draft.categoryName != null) {
+            askWallet(type, amount, draft.categoryName, wallets, voice)
+        } else {
+            askCategory(type, amount, cats, voice)
+        }
+    }
+
     private fun handleStep(
         step: BotStep,
         input: String,
         wallets: List<WalletEntity>,
         expenseCategories: List<CategoryEntity>,
-        incomeCategories: List<CategoryEntity>
+        incomeCategories: List<CategoryEntity>,
+        voice: PersonaVoice
     ): BotResult {
         return when (step) {
             is BotStep.WaitAmount -> {
@@ -119,7 +137,7 @@ class BotModeHandler @Inject constructor() {
                     BotResult("Nominal tidak valid 🤔\nContoh: 50000 · 50rb · 50k · 1.5jt", nextStep = step)
                 } else {
                     val cats = if (step.type == "INCOME") incomeCategories else expenseCategories
-                    askCategory(step.type, amount, cats)
+                    askCategory(step.type, amount, cats, voice)
                 }
             }
 
@@ -128,53 +146,33 @@ class BotModeHandler @Inject constructor() {
                 val cat  = cats.find { it.name.equals(input, ignoreCase = true) }
                     ?: cats.find { it.name.contains(input, ignoreCase = true) }
                     ?: cats.find { input.contains(it.name, ignoreCase = true) }
-                if (cat == null) askCategory(step.type, step.amount, cats, invalid = true)
-                else askWallet(step.type, step.amount, cat.name, wallets)
+                if (cat == null) askCategory(step.type, step.amount, cats, voice, invalid = true)
+                else askWallet(step.type, step.amount, cat.name, wallets, voice)
             }
 
             is BotStep.WaitWallet -> {
                 val wallet = wallets.find { it.name.equals(input, ignoreCase = true) }
                     ?: wallets.find { it.name.contains(input, ignoreCase = true) }
                     ?: wallets.find { input.contains(it.name, ignoreCase = true) }
-                if (wallet == null) askWallet(step.type, step.amount, step.category, wallets, invalid = true)
+                if (wallet == null) askWallet(step.type, step.amount, step.category, wallets, voice, invalid = true)
                 else BotResult(
-                    text     = "Judul transaksi? (atau ketik *skip*)",
+                    text     = voice.askTitle,
                     nextStep = BotStep.WaitDesc(step.type, step.amount, step.category, wallet.name)
                 )
             }
 
             is BotStep.WaitDesc -> {
                 val desc = if (input.lowercase() in listOf("skip", "-", "lewati", "")) "" else input
-                // Semua data lengkap → minta AI buat konfirmasi
+                // Semua data lengkap → minta AI buat konfirmasi. ChatViewModel
+                // langsung mengambil alih lewat requestAiConfirm dan menaruh
+                // hasilnya di pendingTransaction (dikonfirmasi via tombol UI,
+                // bukan mengetik ya/tidak) — makanya nextStep balik ke Idle,
+                // bukan menunggu step lanjutan di sini.
                 BotResult(
                     text             = "",
-                    nextStep         = BotStep.WaitConfirm(step.type, step.amount, step.category, step.wallet, desc),
+                    nextStep         = BotStep.Idle,
                     requestAiConfirm = AiConfirmRequest(step.type, step.amount, step.category, step.wallet, desc)
                 )
-            }
-
-            is BotStep.WaitConfirm -> {
-                when (input.lowercase().trim()) {
-                    "ya", "y", "iya", "yes", "ok", "oke", "simpan" -> BotResult(
-                        text            = "✅ Tersimpan!",
-                        saveTransaction = SaveRequest(
-                            type         = step.type,
-                            amount       = step.amount,
-                            categoryName = step.category,
-                            walletName   = step.wallet,
-                            desc         = step.desc
-                        ),
-                        nextStep = BotStep.Idle
-                    )
-                    "tidak", "batal", "cancel", "no", "n" -> BotResult(
-                        text     = "❌ Dibatalkan.",
-                        nextStep = BotStep.Idle
-                    )
-                    else -> BotResult(
-                        text     = "Ketik *ya* untuk simpan atau *tidak* untuk batal.",
-                        nextStep = step
-                    )
-                }
             }
 
             BotStep.Idle -> BotResult("", nextStep = BotStep.Idle)
@@ -183,14 +181,13 @@ class BotModeHandler @Inject constructor() {
 
     private fun askCategory(
         type: String, amount: Long,
-        cats: List<CategoryEntity>, invalid: Boolean = false
+        cats: List<CategoryEntity>, voice: PersonaVoice, invalid: Boolean = false
     ): BotResult {
-        val prefix = if (invalid) "Kategori tidak ditemukan.\n" else ""
         return if (cats.isEmpty()) {
-            BotResult("${prefix}Belum ada kategori. Tambahkan dulu di Setelan.", nextStep = BotStep.Idle)
+            BotResult("Belum ada kategori. Tambahkan dulu di Setelan.", nextStep = BotStep.Idle)
         } else {
             BotResult(
-                text     = "${prefix}${rp(amount)} — pilih kategori:",
+                text     = voice.categoryPrompt(rp(amount), invalid),
                 option   = ChatOption.CategoryOptions(cats.map { it.name }),
                 nextStep = BotStep.WaitCategory(type, amount)
             )
@@ -199,14 +196,13 @@ class BotModeHandler @Inject constructor() {
 
     private fun askWallet(
         type: String, amount: Long, category: String,
-        wallets: List<WalletEntity>, invalid: Boolean = false
+        wallets: List<WalletEntity>, voice: PersonaVoice, invalid: Boolean = false
     ): BotResult {
-        val prefix = if (invalid) "Dompet tidak ditemukan.\n" else ""
         return if (wallets.isEmpty()) {
-            BotResult("${prefix}Belum ada dompet.", nextStep = BotStep.Idle)
+            BotResult("Belum ada dompet.", nextStep = BotStep.Idle)
         } else {
             BotResult(
-                text     = "${prefix}Oke, *$category*. Pilih dompet:",
+                text     = voice.walletPrompt(category, invalid),
                 option   = ChatOption.WalletOptions(wallets.map { it.name }),
                 nextStep = BotStep.WaitWallet(type, amount, category)
             )
@@ -239,30 +235,10 @@ class BotModeHandler @Inject constructor() {
         """.trimIndent()
     )
 
-    fun parseAmount(input: String): Long? {
-        if (input.isBlank()) return null
-        var clean = input.trim().lowercase()
-            .replace("_", "")
-            .replace(" ", "")
-            .replace("rp", "")
-
-        val jutaRegex = Regex("""^([\d.,]+)\s*j(?:t|uta)?$""")
-        val ribuRegex = Regex("""^([\d.,]+)\s*(?:rb|ribu|k)$""")
-
-        jutaRegex.find(clean)?.let { match ->
-            val num = parseDecimal(match.groupValues[1]) ?: return null
-            return (num * 1_000_000).toLong().takeIf { it > 0 }
-        }
-
-        ribuRegex.find(clean)?.let { match ->
-            val num = parseDecimal(match.groupValues[1]) ?: return null
-            return (num * 1_000).toLong().takeIf { it > 0 }
-        }
-
-        clean = clean.replace(".", "").replace(",", ".")
-        return clean.toDoubleOrNull()?.toLong()?.takeIf { it > 0 }
-    }
-
-    private fun parseDecimal(input: String): Double? =
-        input.replace(",", ".").toDoubleOrNull()
+    // Implementasi sesungguhnya ada di AmountParser (murni, teruji unit test,
+    // tanpa dependency Android) — dipakai bersama Mode Bot dan parser
+    // transaksi rule-based lain. Method ini dipertahankan sebagai fasad
+    // supaya pemanggil yang sudah ada (mis. ChatViewModel.isTransactionIntent)
+    // tidak perlu diubah.
+    fun parseAmount(input: String): Long? = AmountParser.parse(input)
 }

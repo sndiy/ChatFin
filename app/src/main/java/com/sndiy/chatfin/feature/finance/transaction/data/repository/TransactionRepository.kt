@@ -3,14 +3,23 @@
 // PERUBAHAN dari versi sebelumnya:
 // 1. Tambah updateTransaction() — rollback saldo lama, apply saldo baru
 // 2. Tambah searchTransactions() — query dengan LIKE untuk search
+// 3. [M2] addTransaction/updateTransaction/deleteTransaction dibungkus
+//    db.withTransaction {} — insert/update/delete transaksi dan mutasi saldo
+//    dompet sekarang atomik. Kalau proses mati di tengah, SQLite melakukan
+//    rollback penuh: tidak ada lagi kondisi "transaksi tercatat tapi saldo
+//    tidak berubah" atau sebaliknya.
 
 package com.sndiy.chatfin.feature.finance.transaction.data.repository
 
+import androidx.room.withTransaction
+import com.sndiy.chatfin.core.data.local.ChatFinDatabase
 import com.sndiy.chatfin.core.data.local.dao.CategorySum
 import com.sndiy.chatfin.core.data.local.dao.DailyTotal
 import com.sndiy.chatfin.core.data.local.dao.TransactionDao
 import com.sndiy.chatfin.core.data.local.dao.WalletDao
 import com.sndiy.chatfin.core.data.local.entity.TransactionEntity
+import com.sndiy.chatfin.core.domain.BalanceEffect
+import com.sndiy.chatfin.core.domain.WalletDelta
 import kotlinx.coroutines.flow.Flow
 import java.time.LocalDate
 import java.time.LocalTime
@@ -21,6 +30,7 @@ import javax.inject.Singleton
 
 @Singleton
 class TransactionRepository @Inject constructor(
+    private val db: ChatFinDatabase,
     private val transactionDao: TransactionDao,
     private val walletDao: WalletDao
 ) {
@@ -88,9 +98,7 @@ class TransactionRepository @Inject constructor(
         note: String? = null,
         receiptImageUri: String? = null,
         date: LocalDate = LocalDate.now(),
-        time: LocalTime = LocalTime.now(),
-        isRecurring: Boolean = false,
-        recurringInterval: String? = null
+        time: LocalTime = LocalTime.now()
     ) {
         val transaction = TransactionEntity(
             id                = UUID.randomUUID().toString(),
@@ -103,12 +111,12 @@ class TransactionRepository @Inject constructor(
             note              = note,
             receiptImageUri   = receiptImageUri,
             date              = date.format(dateFormatter),
-            time              = time.format(timeFormatter),
-            isRecurring       = isRecurring,
-            recurringInterval = recurringInterval
+            time              = time.format(timeFormatter)
         )
-        transactionDao.insertTransaction(transaction)
-        applyBalanceEffect(type, walletId, toWalletId, amount)
+        db.withTransaction {
+            transactionDao.insertTransaction(transaction)
+            applyBalanceEffect(type, walletId, toWalletId, amount)
+        }
     }
 
     // ── BARU: Update transaksi dengan rollback + apply saldo ─────────────────
@@ -123,58 +131,55 @@ class TransactionRepository @Inject constructor(
         newDate: LocalDate,
         newTime: LocalTime
     ) {
-        // 1. Rollback efek saldo dari transaksi lama
-        rollbackBalanceEffect(
-            oldTransaction.type,
-            oldTransaction.walletId,
-            oldTransaction.toWalletId,
-            oldTransaction.amount
-        )
+        db.withTransaction {
+            // 1. Rollback efek saldo dari transaksi lama
+            rollbackBalanceEffect(
+                oldTransaction.type,
+                oldTransaction.walletId,
+                oldTransaction.toWalletId,
+                oldTransaction.amount
+            )
 
-        // 2. Update entity di database
-        val updated = oldTransaction.copy(
-            type       = newType,
-            amount     = newAmount,
-            categoryId = newCategoryId,
-            walletId   = newWalletId,
-            toWalletId = newToWalletId,
-            note       = newNote,
-            date       = newDate.format(dateFormatter),
-            time       = newTime.format(timeFormatter)
-        )
-        transactionDao.updateTransaction(updated)
+            // 2. Update entity di database
+            val updated = oldTransaction.copy(
+                type       = newType,
+                amount     = newAmount,
+                categoryId = newCategoryId,
+                walletId   = newWalletId,
+                toWalletId = newToWalletId,
+                note       = newNote,
+                date       = newDate.format(dateFormatter),
+                time       = newTime.format(timeFormatter)
+            )
+            transactionDao.updateTransaction(updated)
 
-        // 3. Apply efek saldo dari transaksi baru
-        applyBalanceEffect(newType, newWalletId, newToWalletId, newAmount)
+            // 3. Apply efek saldo dari transaksi baru
+            applyBalanceEffect(newType, newWalletId, newToWalletId, newAmount)
+        }
     }
 
     // ── Hapus transaksi + rollback saldo dompet ──────────────────────────────
     suspend fun deleteTransaction(transaction: TransactionEntity) {
-        transactionDao.deleteTransaction(transaction)
-        rollbackBalanceEffect(
-            transaction.type,
-            transaction.walletId,
-            transaction.toWalletId,
-            transaction.amount
-        )
+        db.withTransaction {
+            transactionDao.deleteTransaction(transaction)
+            rollbackBalanceEffect(
+                transaction.type,
+                transaction.walletId,
+                transaction.toWalletId,
+                transaction.amount
+            )
+        }
     }
 
     // ── Helper: apply balance effect ─────────────────────────────────────────
+    // Keputusan (dompet mana, berapa, tanda apa) ada di BalanceEffect (murni,
+    // teruji tanpa Room) — di sini hanya menerjemahkan hasilnya ke DAO.
     private suspend fun applyBalanceEffect(
         type: String,
         walletId: String,
         toWalletId: String?,
         amount: Long
-    ) {
-        when (type) {
-            "INCOME"   -> walletDao.addToBalance(walletId, amount)
-            "EXPENSE"  -> walletDao.subtractFromBalance(walletId, amount)
-            "TRANSFER" -> {
-                walletDao.subtractFromBalance(walletId, amount)
-                toWalletId?.let { walletDao.addToBalance(it, amount) }
-            }
-        }
-    }
+    ) = applyDeltas(BalanceEffect.apply(type, walletId, toWalletId, amount))
 
     // ── Helper: rollback balance effect ──────────────────────────────────────
     private suspend fun rollbackBalanceEffect(
@@ -182,14 +187,12 @@ class TransactionRepository @Inject constructor(
         walletId: String,
         toWalletId: String?,
         amount: Long
-    ) {
-        when (type) {
-            "INCOME"   -> walletDao.subtractFromBalance(walletId, amount)
-            "EXPENSE"  -> walletDao.addToBalance(walletId, amount)
-            "TRANSFER" -> {
-                walletDao.addToBalance(walletId, amount)
-                toWalletId?.let { walletDao.subtractFromBalance(it, amount) }
-            }
+    ) = applyDeltas(BalanceEffect.rollback(type, walletId, toWalletId, amount))
+
+    private suspend fun applyDeltas(deltas: List<WalletDelta>) {
+        deltas.forEach { delta ->
+            if (delta.amount >= 0) walletDao.addToBalance(delta.walletId, delta.amount)
+            else walletDao.subtractFromBalance(delta.walletId, -delta.amount)
         }
     }
 }

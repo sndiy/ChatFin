@@ -3,6 +3,7 @@
 package com.sndiy.chatfin.feature.onboarding.ui
 
 import androidx.compose.animation.*
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -93,12 +94,17 @@ fun OnboardingScreen(
                 // Page dots
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     repeat(pages.size + 1) { index ->
+                        val isActive = index == pagerState.currentPage
+                        val dotWidth by animateDpAsState(
+                            targetValue = if (isActive) 24.dp else 8.dp,
+                            label       = "dot_width"
+                        )
                         Box(
                             modifier = Modifier
-                                .size(if (index == pagerState.currentPage) 24.dp else 8.dp, 8.dp)
+                                .size(dotWidth, 8.dp)
                                 .clip(RoundedCornerShape(4.dp))
                                 .background(
-                                    if (index == pagerState.currentPage) MaterialTheme.colorScheme.primary
+                                    if (isActive) MaterialTheme.colorScheme.primary
                                     else MaterialTheme.colorScheme.outlineVariant
                                 )
                         )

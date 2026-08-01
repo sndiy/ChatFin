@@ -2,11 +2,13 @@
 
 package com.sndiy.chatfin.feature.finance.transaction.ui
 
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
@@ -24,6 +26,8 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.sndiy.chatfin.core.data.local.entity.WalletEntity
+import com.sndiy.chatfin.core.ui.animation.StaggeredEntrance
+import com.sndiy.chatfin.core.ui.animation.pressScale
 import java.text.NumberFormat
 import java.util.Locale
 
@@ -70,7 +74,11 @@ fun WalletListScreen(
         }
     ) { padding ->
 
-        if (listState.wallets.isEmpty()) {
+        if (listState.isLoading && listState.wallets.isEmpty()) {
+            Box(Modifier.padding(padding).fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
+        } else if (listState.wallets.isEmpty()) {
             Column(
                 modifier            = Modifier.padding(padding).fillMaxSize(),
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -95,13 +103,17 @@ fun WalletListScreen(
             ) {
                 // Summary total saldo
                 item {
-                    TotalBalanceCard(wallets = listState.wallets)
+                    StaggeredEntrance(index = 0) {
+                        TotalBalanceCard(wallets = listState.wallets)
+                    }
                 }
-                items(listState.wallets, key = { it.id }) { wallet ->
-                    WalletCard(
-                        wallet   = wallet,
-                        onDelete = { walletToDelete = wallet }
-                    )
+                itemsIndexed(listState.wallets, key = { _, it -> it.id }) { idx, wallet ->
+                    StaggeredEntrance(index = idx + 1) {
+                        WalletCard(
+                            wallet   = wallet,
+                            onDelete = { walletToDelete = wallet }
+                        )
+                    }
                 }
             }
         }
@@ -317,12 +329,17 @@ fun WalletFormScreen(
                 walletColors.forEach { hex ->
                     val c = runCatching { Color(android.graphics.Color.parseColor(hex)) }.getOrElse { Color.Gray }
                     val isSelected = formState.colorHex == hex
+                    val interactionSource = remember { MutableInteractionSource() }
                     Box(
                         modifier         = Modifier
                             .size(36.dp)
+                            .pressScale(interactionSource)
                             .clip(CircleShape)
                             .background(c)
-                            .clickable { viewModel.onColorChange(hex) },
+                            .clickable(
+                                interactionSource = interactionSource,
+                                indication         = LocalIndication.current
+                            ) { viewModel.onColorChange(hex) },
                         contentAlignment = Alignment.Center
                     ) {
                         if (isSelected) {

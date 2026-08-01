@@ -3,9 +3,6 @@
 package com.sndiy.chatfin.core.di
 
 import android.content.Context
-import androidx.datastore.core.DataStore
-import androidx.datastore.preferences.core.Preferences
-import androidx.datastore.preferences.preferencesDataStore
 import com.sndiy.chatfin.core.data.security.SecureStorage
 import dagger.Module
 import dagger.Provides
@@ -14,23 +11,18 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
 
-// Extension property untuk DataStore (hanya boleh ada satu per nama)
-private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(
-    name = "chatfin_preferences"
-)
+// Catatan: provideDataStore + DataStore "chatfin_preferences" dihapus di M0.
+// Tidak ada satu pun kelas yang meng-inject DataStore<Preferences>, jadi instance
+// itu tidak pernah terpakai. DataStore yang benar-benar aktif dideklarasikan
+// langsung di kelas pemakainya:
+//   - AppPreferences    → "chatfin_prefs"
+//   - ThemePreferences  → "theme_prefs"
 
 @Module
 @InstallIn(SingletonComponent::class)
 object PreferencesModule {
 
-    // DataStore untuk menyimpan preferensi non-sensitif (tema, bahasa, dll)
-    @Provides
-    @Singleton
-    fun provideDataStore(
-        @ApplicationContext context: Context
-    ): DataStore<Preferences> = context.dataStore
-
-    // SecureStorage untuk menyimpan data sensitif (API Key, PIN hash)
+    // SecureStorage untuk menyimpan data sensitif (API Key)
     @Provides
     @Singleton
     fun provideSecureStorage(

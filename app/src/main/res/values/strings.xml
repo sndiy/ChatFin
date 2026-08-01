@@ -1,3 +1,44 @@
 <resources>
     <string name="app_name">ChatFin</string>
+
+    <!-- Layar API Key (Setelan → API Key) -->
+    <string name="apikey_title">API Key Gemini</string>
+    <string name="apikey_menu_title">API Key AI</string>
+    <string name="apikey_menu_subtitle_active">Aktif — Mai pakai AI Gemini</string>
+    <string name="apikey_menu_subtitle_inactive">Belum diset — Mai pakai Mode Bot</string>
+    <string name="apikey_intro_title">Apa itu API key?</string>
+    <string name="apikey_intro_body">API key membuat Mai lebih pintar lewat AI Gemini — bisa menjawab pertanyaan bebas, bukan cuma perintah baku. ChatFin tetap berfungsi penuh tanpa API key lewat Mode Bot.</string>
+    <string name="apikey_guide_title">Cara mendapatkan API key</string>
+    <string name="apikey_guide_step1">1. Buka Google AI Studio lewat tombol di bawah</string>
+    <string name="apikey_guide_step2">2. Login dengan akun Google</string>
+    <string name="apikey_guide_step3">3. Ketuk \"Create API Key\"</string>
+    <string name="apikey_guide_step4">4. Salin key-nya, lalu tempel di kolom bawah</string>
+    <string name="apikey_open_studio">Buka Google AI Studio</string>
+    <string name="apikey_current_label">API key aktif</string>
+    <string name="apikey_input_label">Tempel API key di sini</string>
+    <string name="apikey_validate_button">Validasi &amp; Simpan</string>
+    <string name="apikey_validating">Memvalidasi…</string>
+    <string name="apikey_clear_button">Hapus API Key</string>
+    <string name="apikey_clear_confirm_title">Hapus API key?</string>
+    <string name="apikey_clear_confirm_body">Mai akan kembali ke Mode Bot. Kamu bisa memasukkan key lagi kapan saja.</string>
+    <string name="apikey_clear_confirm_action">Hapus</string>
+    <string name="apikey_cancel">Batal</string>
+    <string name="apikey_empty_error">API key tidak boleh kosong.</string>
+    <string name="apikey_invalid_error">API key tidak valid. Periksa lagi key yang kamu salin.</string>
+    <string name="apikey_network_error">Tidak ada koneksi internet. Coba lagi saat online.</string>
+    <string name="apikey_quota_error">Key terdeteksi valid, tapi sedang limit. Coba lagi nanti.</string>
+    <string name="apikey_generic_error">Gagal memvalidasi API key. Coba lagi.</string>
+    <string name="apikey_save_success">API key berhasil disimpan dan aktif.</string>
+    <string name="apikey_clear_success">API key dihapus. Mai kembali ke Mode Bot.</string>
+
+    <!-- Layar Kepribadian AI (Setelan → Kepribadian AI) -->
+    <string name="persona_title">Kepribadian AI</string>
+    <string name="persona_menu_title">Kepribadian AI</string>
+    <string name="persona_menu_subtitle">Aktif: %1$s</string>
+    <string name="persona_intro">Pilih gaya bicara asisten saat menjawab lewat AI. Mode Bot (tanpa API key) tetap pakai gaya Mai secara default.</string>
+    <string name="persona_custom_label">Tulis kepribadian asisten di sini</string>
+    <string name="persona_custom_placeholder">Contoh: Kamu adalah asisten keuangan yang tenang dan suka memberi analogi sederhana…</string>
+    <string name="persona_custom_hint">Mode Bot (tanpa API key) tetap pakai gaya netral untuk Custom — teks ini hanya memengaruhi jawaban lewat AI.</string>
+    <string name="persona_custom_save">Simpan Kepribadian</string>
+    <string name="persona_custom_saved">Kepribadian custom disimpan.</string>
 </resources>

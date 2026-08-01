@@ -261,8 +261,6 @@ class SyncRepository @Inject constructor(
         "note"              to (note ?: ""),
         "date"              to date,
         "time"              to time,
-        "isRecurring"       to isRecurring,
-        "recurringInterval" to (recurringInterval ?: ""),
         "createdAt"         to createdAt
     )
 
@@ -326,8 +324,6 @@ class SyncRepository @Inject constructor(
                 note              = getString("note")?.ifBlank { null },
                 date              = getString("date") ?: return null,
                 time              = getString("time") ?: return null,
-                isRecurring       = getBoolean("isRecurring") ?: false,
-                recurringInterval = getString("recurringInterval")?.ifBlank { null },
                 createdAt         = getLong("createdAt") ?: System.currentTimeMillis()
             )
         } catch (e: Exception) { null }

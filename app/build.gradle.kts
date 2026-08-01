@@ -1,5 +1,3 @@
-import java.util.Properties
-
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -11,30 +9,27 @@ plugins {
     alias(libs.plugins.google.services)
 }
 
-// Baca local.properties dengan cara yang benar
-val localProps = Properties().apply {
-    val f = rootProject.file("local.properties")
-    if (f.exists()) load(f.inputStream())
-}
-
 android {
     namespace = "com.sndiy.chatfin"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId   = "com.sndiy.chatfin"
         minSdk          = 26
-        targetSdk       = 35
-        versionCode     = 1
-        versionName     = "1.0.0"
+        // targetSdk 36 (Android 16) wajib untuk update aplikasi di Play Store —
+        // dengan 35, Play menolak upload/update APK apa pun.
+        targetSdk       = 36
+        // versionName diselaraskan dengan realita rilis: git log terakhir
+        // "Update 2.3.1" dan layar Tentang sebelumnya hardcode "Versi 2.3.1",
+        // sementara nilai di sini masih 1.0.0. Sekarang file ini jadi satu-satunya
+        // sumber kebenaran — AboutScreen/SettingsScreen membacanya lewat
+        // BuildConfig.VERSION_NAME.
+        // 2.4.0: chat persistence, redesain UI, perbaikan state loading/empty/error,
+        // pembersihan kode mati. versionCode dinaikkan sesuai peringatan di atas.
+        versionCode     = 2
+        versionName     = "2.4.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-
-        buildConfigField(
-            "String",
-            "GEMINI_API_KEY",
-            "\"${localProps.getProperty("GEMINI_API_KEY", "")}\""
-        )
     }
 
     buildTypes {
@@ -78,6 +73,21 @@ android {
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            // mockk (androidTest) menyeret dependency transitif JUnit Jupiter
+            // yang membawa file lisensi duplikat — proyek ini tetap pakai
+            // JUnit4 sebagai runner, jupiter-nya tidak pernah dipakai langsung.
+            excludes += "/META-INF/LICENSE.md"
+            excludes += "/META-INF/LICENSE-notice.md"
+        }
+    }
+
+    sourceSets {
+        // MigrationTest butuh file schema JSON yang di-export Room
+        // (app/schemas/) sebagai test asset untuk membangun database versi
+        // lama yang persis sesuai riwayat nyata, lalu memvalidasi hasil
+        // migrasi terhadap schema versi terbaru.
+        getByName("androidTest") {
+            assets.srcDirs("$projectDir/schemas")
         }
     }
 }
@@ -97,8 +107,6 @@ dependencies {
     implementation(libs.compose.animation)
     implementation(libs.activity.compose)
     implementation(libs.navigation.compose)
-
-    implementation(libs.compose.markdown)
 
     debugImplementation(libs.compose.ui.tooling)
     debugImplementation(libs.compose.ui.test.manifest)
@@ -128,15 +136,14 @@ dependencies {
 
     implementation(libs.coroutines.android)
     implementation(libs.kotlinx.serialization.json)
-    implementation(libs.kotlinx.datetime)
-
-    implementation(libs.coil.compose)
 
     testImplementation(libs.junit)
+    testImplementation(libs.coroutines.test)
+    testImplementation(libs.turbine)
+    testImplementation(libs.mockk)
     androidTestImplementation(libs.junit.ext)
     androidTestImplementation(libs.espresso)
     androidTestImplementation(libs.compose.ui.test.junit4)
-
-    implementation("androidx.datastore:datastore-preferences:1.1.1")
-    implementation("com.google.code.gson:gson:2.10.1")
+    androidTestImplementation(libs.room.testing)
+    androidTestImplementation(libs.mockk.android)
 }

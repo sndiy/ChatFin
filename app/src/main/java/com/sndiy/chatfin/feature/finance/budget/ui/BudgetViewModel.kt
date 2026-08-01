@@ -41,6 +41,15 @@ class BudgetViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(BudgetUiState())
     val uiState: StateFlow<BudgetUiState> = _uiState.asStateFlow()
 
+    // Periode yang sedang dilihat — bagian dari upstream Flow, bukan dibaca
+    // dari _uiState.value di dalam transform flatMapLatest. Sebelumnya
+    // navigateMonth() memanggil ulang observeData() tanpa membatalkan
+    // collector lama, sehingga tiap tap panah bulan menumpuk satu collector
+    // baru (bug: angka budget berubah sendiri / tidak sesuai bulan yang
+    // ditampilkan). Sekarang navigateMonth() hanya mengubah _period, dan
+    // flatMapLatest di observeData() otomatis membatalkan query lama.
+    private val _period = MutableStateFlow(LocalDate.now().year to LocalDate.now().monthValue)
+
     private var activeAccountId: String? = null
 
     init { observeData() }
@@ -48,21 +57,24 @@ class BudgetViewModel @Inject constructor(
     @OptIn(ExperimentalCoroutinesApi::class)
     private fun observeData() {
         viewModelScope.launch {
-            accountRepo.getActiveAccount()
-                .filterNotNull()
-                .flatMapLatest { account ->
-                    activeAccountId = account.id
-                    val state = _uiState.value
+            combine(
+                accountRepo.getActiveAccount().filterNotNull(),
+                _period
+            ) { account, period -> Triple(account.id, period.first, period.second) }
+                .distinctUntilChanged()
+                .flatMapLatest { (accountId, year, month) ->
+                    activeAccountId = accountId
                     combine(
-                        budgetRepo.getBudgetsByAccountAndPeriod(account.id, state.year, state.month),
-                        categoryRepo.getCategoriesByAccountAndType(account.id, "EXPENSE")
+                        budgetRepo.getBudgetsByAccountAndPeriod(accountId, year, month),
+                        categoryRepo.getCategoriesByAccountAndType(accountId, "EXPENSE")
                     ) { budgets, categories ->
-                        Triple(account.id, budgets, categories)
+                        Triple(accountId, budgets, categories) to (year to month)
                     }
                 }
-                .collect { (accountId, budgets, categories) ->
-                    val state = _uiState.value
-                    val startDate = LocalDate.of(state.year, state.month, 1)
+                .collect { (data, period) ->
+                    val (accountId, budgets, categories) = data
+                    val (year, month) = period
+                    val startDate = LocalDate.of(year, month, 1)
                     val endDate = startDate.plusMonths(1).minusDays(1)
 
                     val budgetsWithSpent = budgets.map { budget ->
@@ -154,7 +166,7 @@ class BudgetViewModel @Inject constructor(
         if (newMonth < 1) { newMonth = 12; newYear-- }
         if (newMonth > 12) { newMonth = 1; newYear++ }
         _uiState.update { it.copy(month = newMonth, year = newYear, isLoading = true) }
-        observeData()
+        _period.value = newYear to newMonth
     }
 
     fun clearMessages() {

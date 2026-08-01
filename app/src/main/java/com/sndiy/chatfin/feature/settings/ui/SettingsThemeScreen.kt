@@ -1,8 +1,10 @@
 package com.sndiy.chatfin.feature.settings.ui
 
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -21,6 +23,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.sndiy.chatfin.core.ui.animation.pressScale
 import com.sndiy.chatfin.core.ui.theme.AppAccents
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -105,10 +108,16 @@ private fun ThemeModeCard(
 ) {
     val borderColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
     val bgColor     = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
+    val interactionSource = remember { MutableInteractionSource() }
 
     Card(
         modifier = modifier
-            .clickable(onClick = onClick)
+            .pressScale(interactionSource)
+            .clickable(
+                interactionSource = interactionSource,
+                indication         = LocalIndication.current,
+                onClick            = onClick
+            )
             .border(
                 width = if (selected) 2.dp else 1.dp,
                 color = borderColor,
@@ -153,11 +162,17 @@ private fun AccentColorCard(
     onClick: () -> Unit
 ) {
     val borderColor = if (selected) color else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+    val interactionSource = remember { MutableInteractionSource() }
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .pressScale(interactionSource)
+            .clickable(
+                interactionSource = interactionSource,
+                indication         = LocalIndication.current,
+                onClick            = onClick
+            )
             .border(
                 width = if (selected) 2.dp else 1.dp,
                 color = borderColor,

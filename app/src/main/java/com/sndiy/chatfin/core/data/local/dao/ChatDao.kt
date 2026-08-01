@@ -20,6 +20,10 @@ interface ChatDao {
     @Query("SELECT * FROM chat_sessions WHERE id = :id")
     suspend fun getSessionById(id: String): ChatSessionEntity?
 
+    // Ambil sesi terbaru milik satu akun (satu sesi berkelanjutan per akun)
+    @Query("SELECT * FROM chat_sessions WHERE accountId = :accountId ORDER BY updatedAt DESC LIMIT 1")
+    suspend fun getLatestSessionForAccount(accountId: String): ChatSessionEntity?
+
     // Tambah sesi baru
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertSession(session: ChatSessionEntity)
@@ -37,6 +41,12 @@ interface ChatDao {
     // Ambil semua pesan dalam satu sesi (urutan kronologis)
     @Query("SELECT * FROM chat_messages WHERE sessionId = :sessionId ORDER BY createdAt ASC")
     fun getMessagesBySession(sessionId: String): Flow<List<ChatMessageEntity>>
+
+    // Versi sekali-ambil (bukan Flow) — dipakai untuk memuat riwayat sekali di
+    // awal sesi ViewModel, bukan collector hidup (menghindari state di UI
+    // "berebut" antara update optimistic in-memory dan emisi Room).
+    @Query("SELECT * FROM chat_messages WHERE sessionId = :sessionId ORDER BY createdAt ASC")
+    suspend fun getMessagesBySessionOnce(sessionId: String): List<ChatMessageEntity>
 
     // Tambah satu pesan
     @Insert(onConflict = OnConflictStrategy.REPLACE)

@@ -26,7 +26,6 @@ import androidx.navigation.compose.*
 import androidx.navigation.navArgument
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.sndiy.chatfin.feature.chat.ui.ChatViewModel
 import com.sndiy.chatfin.feature.chat.ui.ChatScreen
 import com.sndiy.chatfin.feature.auth.ui.AuthScreen
 import com.sndiy.chatfin.feature.finance.account.ui.AccountFormScreen
@@ -44,7 +43,9 @@ import com.sndiy.chatfin.feature.finance.transaction.ui.WalletFormScreen
 import com.sndiy.chatfin.feature.finance.transaction.ui.WalletListScreen
 import com.sndiy.chatfin.feature.onboarding.ui.OnboardingScreen
 import com.sndiy.chatfin.feature.onboarding.ui.OnboardingViewModel
+import com.sndiy.chatfin.feature.settings.apikey.ApiKeyScreen
 import com.sndiy.chatfin.feature.settings.backup.DataBackupScreen
+import com.sndiy.chatfin.feature.settings.persona.PersonaScreen
 import com.sndiy.chatfin.feature.settings.ui.AboutScreen
 import com.sndiy.chatfin.feature.settings.ui.SettingsScreen
 import com.sndiy.chatfin.feature.settings.ui.SettingsThemeScreen
@@ -59,7 +60,7 @@ data class BottomNavItem(
 private val bottomNavItems = listOf(
     BottomNavItem(Screen.Dashboard.route,       "Beranda",  Icons.Default.Home),
     BottomNavItem(Screen.TransactionList.route,  "Riwayat",  Icons.Default.Receipt),
-    BottomNavItem(Screen.Chat.route,            "Mai",      Icons.Default.AutoAwesome),
+    BottomNavItem(Screen.Chat.route,            "Chat",      Icons.Default.AutoAwesome),
     BottomNavItem(Screen.Settings.route,        "Setelan",  Icons.Default.Settings),
 )
 
@@ -72,20 +73,6 @@ private val fabVisibleRoutes = setOf(
 )
 
 @Composable
-fun PlaceholderScreen(name: String) {
-    Column(
-        modifier            = Modifier.fillMaxSize(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Icon(Icons.Default.Construction, null, modifier = Modifier.size(64.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(modifier = Modifier.height(16.dp))
-        Text(text = name, style = MaterialTheme.typography.titleMedium)
-        Text("Akan hadir di fase berikutnya", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
-}
-
-@Composable
 fun ChatFinNavGraph(
     navController: NavHostController,
     onFinish: () -> Unit
@@ -95,7 +82,6 @@ fun ChatFinNavGraph(
     val showBottomBar     = currentRoute in bottomNavRoutes
     val showFab           = currentRoute in fabVisibleRoutes  // FIX BUG 1
     val isOnBottomNav     = currentRoute in bottomNavRoutes
-    val chatViewModel: ChatViewModel = hiltViewModel()
 
     var showQuickAdd by remember { mutableStateOf(false) }
     val transactionViewModel: TransactionViewModel = hiltViewModel()
@@ -177,7 +163,7 @@ fun ChatFinNavGraph(
                     onNavigateToBudget = { navController.navigate(Screen.BudgetList.route) }
                 )
             }
-            composable(Screen.Chat.route)           { ChatScreen(viewModel = chatViewModel) }
+            composable(Screen.Chat.route)           { ChatScreen() }
             composable(Screen.Settings.route)        { SettingsScreen(navController = navController) }
             composable(Screen.TransactionList.route) {
                 TransactionListScreen(
@@ -210,6 +196,8 @@ fun ChatFinNavGraph(
             composable(Screen.CategoryList.route)   { com.sndiy.chatfin.feature.finance.category.ui.CategoryScreen(onNavigateBack = { navController.popBackStack() }) }
             composable(Screen.SettingsTheme.route)   { SettingsThemeScreen(onNavigateBack = { navController.popBackStack() }) }
             composable(Screen.SettingsAbout.route)   { AboutScreen(onNavigateBack = { navController.popBackStack() }) }
+            composable(Screen.SettingsApiKey.route)  { ApiKeyScreen(onNavigateBack = { navController.popBackStack() }) }
+            composable(Screen.SettingsPersona.route) { PersonaScreen(onNavigateBack = { navController.popBackStack() }) }
             composable(Screen.SettingsBackup.route)  { DataBackupScreen(onNavigateBack = { navController.popBackStack() }, onNavigateToAuth = { navController.navigate(Screen.Auth.route) }, onLoggedOut = { navController.popBackStack() }) }
             composable(Screen.Auth.route)            { AuthScreen(onAuthSuccess = { navController.popBackStack() }, onSkip = { navController.popBackStack() }) }
         }

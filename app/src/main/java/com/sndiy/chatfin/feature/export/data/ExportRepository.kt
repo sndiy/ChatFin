@@ -14,7 +14,9 @@ import com.sndiy.chatfin.core.data.local.dao.TransactionDao
 import com.sndiy.chatfin.core.data.local.dao.WalletDao
 import com.sndiy.chatfin.core.data.local.entity.TransactionEntity
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
 import java.text.NumberFormat
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -44,10 +46,10 @@ class ExportRepository @Inject constructor(
         accountId: String,
         startDate: LocalDate,
         endDate: LocalDate
-    ): Result<String> {
-        return try {
+    ): Result<String> = withContext(Dispatchers.IO) {
+        try {
             val account = accountDao.getAccountById(accountId)
-                ?: return Result.failure(Exception("Akun tidak ditemukan"))
+                ?: return@withContext Result.failure(Exception("Akun tidak ditemukan"))
             val transactions = transactionDao.getTransactionsByPeriod(
                 accountId, startDate.format(dateFmt), endDate.format(dateFmt)
             ).first()
@@ -91,7 +93,7 @@ class ExportRepository @Inject constructor(
             context.contentResolver.openOutputStream(uri)?.use { stream ->
                 stream.write(byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte())) // UTF-8 BOM
                 stream.write(csv.toByteArray(Charsets.UTF_8))
-            } ?: return Result.failure(Exception("Tidak bisa membuka file"))
+            } ?: return@withContext Result.failure(Exception("Tidak bisa membuka file"))
 
             Result.success("${transactions.size} transaksi diekspor ke CSV")
         } catch (e: Exception) {
@@ -100,6 +102,9 @@ class ExportRepository @Inject constructor(
     }
 
     // =====================================================================
+    //  EXPORT PDF DI BAWAH JUGA DIBUNGKUS withContext(Dispatchers.IO) —
+    //  lihat komentar di atas exportCsv.
+    // =====================================================================
     //  PDF EXPORT — minimalis clean, garis tipis, font rapi
     // =====================================================================
     suspend fun exportPdf(
@@ -107,10 +112,10 @@ class ExportRepository @Inject constructor(
         accountId: String,
         startDate: LocalDate,
         endDate: LocalDate
-    ): Result<String> {
-        return try {
+    ): Result<String> = withContext(Dispatchers.IO) {
+        try {
             val account = accountDao.getAccountById(accountId)
-                ?: return Result.failure(Exception("Akun tidak ditemukan"))
+                ?: return@withContext Result.failure(Exception("Akun tidak ditemukan"))
             val transactions = transactionDao.getTransactionsByPeriod(
                 accountId, startDate.format(dateFmt), endDate.format(dateFmt)
             ).first()
@@ -334,7 +339,7 @@ class ExportRepository @Inject constructor(
 
             // Write
             context.contentResolver.openOutputStream(uri)?.use { doc.writeTo(it) }
-                ?: return Result.failure(Exception("Tidak bisa membuka file"))
+                ?: return@withContext Result.failure(Exception("Tidak bisa membuka file"))
             doc.close()
 
             Result.success("${transactions.size} transaksi diekspor ke PDF")

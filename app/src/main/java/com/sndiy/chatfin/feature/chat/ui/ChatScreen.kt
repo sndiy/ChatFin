@@ -1,22 +1,18 @@
-// app/src/main/java/com/sndiy/chatfin/feature/chat/ui/ChatScreen.kt
-//
-// REFACTORED: Semua composable dipindah ke ChatComponents.kt
-// File ini sekarang hanya berisi ChatScreen + ChatScreenContent (orchestrator)
-
 package com.sndiy.chatfin.feature.chat.ui
 
 import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.*
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import androidx.core.graphics.toColorInt
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.sndiy.chatfin.core.ui.theme.MaiPurple
+import kotlinx.coroutines.delay
 
 @Composable
 fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
@@ -34,7 +30,8 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
         onStopGeneration     = viewModel::stopGeneration,
         onOptionSelected     = viewModel::onOptionSelected,
         onConfirmTransaction = viewModel::confirmTransaction,
-        onCancelTransaction  = viewModel::cancelTransaction
+        onCancelTransaction  = viewModel::cancelTransaction,
+        onQuickAction        = viewModel::quickAction
     )
 }
 
@@ -52,19 +49,35 @@ private fun ChatScreenContent(
     onOptionSelected: (com.sndiy.chatfin.ai.ChatOption, String) -> Unit,
     onConfirmTransaction: () -> Unit,
     onCancelTransaction: () -> Unit,
+    onQuickAction: (String) -> Unit
 ) {
     val listState = rememberLazyListState()
+    var showClearDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(uiState.messages.size) {
-        if (uiState.messages.isNotEmpty())
+        if (uiState.messages.isNotEmpty()) {
+            // Small delay so the new item is laid out before scrolling
+            delay(50)
             listState.animateScrollToItem(uiState.messages.lastIndex)
+        }
+    }
+
+    if (showClearDialog) {
+        ClearChatDialog(
+            onConfirm = {
+                showClearDialog = false
+                onClearChat()
+            },
+            onDismiss = { showClearDialog = false }
+        )
     }
 
     Scaffold(
         topBar = {
             ChatTopBar(
-                accountName = uiState.activeAccount?.name ?: "Pilih Akun",
-                onClearChat = onClearChat
+                accountName      = uiState.activeAccount?.name ?: "Pilih Akun",
+                onClearChat      = { showClearDialog = true },
+                onShowClearConfirm = { showClearDialog = true }
             )
         },
         bottomBar = {
@@ -98,17 +111,21 @@ private fun ChatScreenContent(
                     ) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(40.dp),
-                            color    = Color(MAI_COLOR.toColorInt())
+                            color    = MaiPurple
                         )
                         Spacer(Modifier.height(16.dp))
-                        Text("Memeriksa koneksi...", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(
+                            "Mai sedang bersiap...",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
 
                 uiState.messages.isEmpty() -> {
                     ChatWelcomeState(
                         accountName   = uiState.activeAccount?.name,
-                        onQuickAction = { onInputChange(it); onSendMessage() }
+                        onQuickAction = onQuickAction
                     )
                 }
 
@@ -117,7 +134,7 @@ private fun ChatScreenContent(
                         state               = listState,
                         modifier            = Modifier.fillMaxSize(),
                         contentPadding      = PaddingValues(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         items(items = uiState.messages, key = { it.id }) { message ->
                             AnimatedVisibility(

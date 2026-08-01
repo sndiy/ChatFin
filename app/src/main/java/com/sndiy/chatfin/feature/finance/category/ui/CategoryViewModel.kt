@@ -6,6 +6,7 @@ import com.sndiy.chatfin.core.data.local.entity.CategoryEntity
 import com.sndiy.chatfin.feature.finance.account.data.repository.AccountRepository
 import com.sndiy.chatfin.feature.finance.transaction.data.repository.CategoryRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -22,9 +23,11 @@ data class CategoryUiState(
     val showDialog: Boolean                = false,
     val editingCategory: CategoryEntity?   = null,
     val formState: CategoryFormState       = CategoryFormState(),
+    val isLoading: Boolean                 = true,
     val errorMessage: String?              = null
 )
 
+@OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class CategoryViewModel @Inject constructor(
     private val categoryRepo: CategoryRepository,
@@ -34,61 +37,72 @@ class CategoryViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(CategoryUiState())
     val uiState: StateFlow<CategoryUiState> = _uiState.asStateFlow()
 
+    // Sumber kebenaran untuk tab aktif — bagian dari upstream Flow, bukan
+    // dibaca dari _uiState.value di dalam transform. Ini yang membuat
+    // flatMapLatest di bawah bisa membatalkan collector lama secara otomatis
+    // setiap kali tab ATAU akun berganti, alih-alih menumpuk collector baru
+    // setiap kali onTabChange() dipanggil (bug lama: kategori berkedip acak).
+    private val _activeType = MutableStateFlow("EXPENSE")
+
     private var activeAccountId: String? = null
 
     init {
         viewModelScope.launch {
-            accountRepo.getActiveAccount().collect { account ->
-                activeAccountId = account?.id
-                if (account != null) loadCategories(account.id, "EXPENSE")
-            }
-        }
-    }
-
-    private fun loadCategories(accountId: String, type: String) {
-        viewModelScope.launch {
-            categoryRepo.getCategoriesByAccountAndType(accountId, type).collect { cats ->
-                _uiState.value = _uiState.value.copy(categories = cats)
-            }
+            combine(
+                accountRepo.getActiveAccount().filterNotNull(),
+                _activeType
+            ) { account, type -> account.id to type }
+                .distinctUntilChanged()
+                .flatMapLatest { (accountId, type) ->
+                    activeAccountId = accountId
+                    _uiState.update { it.copy(isLoading = true) }
+                    categoryRepo.getCategoriesByAccountAndType(accountId, type)
+                }
+                .collect { cats ->
+                    _uiState.update { it.copy(categories = cats, isLoading = false) }
+                }
         }
     }
 
     fun onTabChange(type: String) {
-        _uiState.value = _uiState.value.copy(activeType = type)
-        val accountId  = activeAccountId ?: return
-        loadCategories(accountId, type)
+        _uiState.update { it.copy(activeType = type) }
+        _activeType.value = type
     }
 
     fun showAddDialog() {
-        _uiState.value = _uiState.value.copy(
-            showDialog      = true,
-            editingCategory = null,
-            formState       = CategoryFormState()
-        )
+        _uiState.update {
+            it.copy(
+                showDialog      = true,
+                editingCategory = null,
+                formState       = CategoryFormState()
+            )
+        }
     }
 
     fun showEditDialog(category: CategoryEntity) {
-        _uiState.value = _uiState.value.copy(
-            showDialog      = true,
-            editingCategory = category,
-            formState       = CategoryFormState(name = category.name, colorHex = category.colorHex)
-        )
+        _uiState.update {
+            it.copy(
+                showDialog      = true,
+                editingCategory = category,
+                formState       = CategoryFormState(name = category.name, colorHex = category.colorHex)
+            )
+        }
     }
 
     fun hideDialog() {
-        _uiState.value = _uiState.value.copy(showDialog = false)
+        _uiState.update { it.copy(showDialog = false) }
     }
 
     fun onNameChange(value: String) {
-        _uiState.value = _uiState.value.copy(
-            formState = _uiState.value.formState.copy(name = value, nameError = null)
-        )
+        _uiState.update {
+            it.copy(formState = it.formState.copy(name = value, nameError = null))
+        }
     }
 
     fun onColorChange(hex: String) {
-        _uiState.value = _uiState.value.copy(
-            formState = _uiState.value.formState.copy(colorHex = hex)
-        )
+        _uiState.update {
+            it.copy(formState = it.formState.copy(colorHex = hex))
+        }
     }
 
     fun saveCategory() {
@@ -96,9 +110,9 @@ class CategoryViewModel @Inject constructor(
         val accountId = activeAccountId ?: return
 
         if (form.name.isBlank()) {
-            _uiState.value = _uiState.value.copy(
-                formState = form.copy(nameError = "Nama kategori tidak boleh kosong")
-            )
+            _uiState.update {
+                it.copy(formState = form.copy(nameError = "Nama kategori tidak boleh kosong"))
+            }
             return
         }
 
@@ -118,28 +132,28 @@ class CategoryViewModel @Inject constructor(
                         colorHex  = form.colorHex
                     )
                 }
-                _uiState.value = _uiState.value.copy(showDialog = false)
+                _uiState.update { it.copy(showDialog = false) }
             } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(errorMessage = "Gagal menyimpan: ${e.message}")
+                _uiState.update { it.copy(errorMessage = "Gagal menyimpan: ${e.message}") }
             }
         }
     }
 
     fun deleteCategory(category: CategoryEntity) {
         if (!category.isCustom) {
-            _uiState.value = _uiState.value.copy(errorMessage = "Kategori default tidak bisa dihapus")
+            _uiState.update { it.copy(errorMessage = "Kategori default tidak bisa dihapus") }
             return
         }
         viewModelScope.launch {
             try {
                 categoryRepo.deleteCategory(category)
             } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(errorMessage = "Gagal menghapus: ${e.message}")
+                _uiState.update { it.copy(errorMessage = "Gagal menghapus: ${e.message}") }
             }
         }
     }
 
     fun clearError() {
-        _uiState.value = _uiState.value.copy(errorMessage = null)
+        _uiState.update { it.copy(errorMessage = null) }
     }
 }
