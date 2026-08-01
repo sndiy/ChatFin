@@ -2,8 +2,8 @@ package com.sndiy.chatfin.feature.settings.backup
 
 import android.content.Context
 import android.net.Uri
-import com.google.gson.Gson
-import com.google.gson.GsonBuilder
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import com.sndiy.chatfin.core.data.local.dao.AccountDao
 import com.sndiy.chatfin.core.data.local.dao.CategoryDao
 import com.sndiy.chatfin.core.data.local.dao.TransactionDao
@@ -13,7 +13,9 @@ import com.sndiy.chatfin.core.data.local.entity.FinanceAccountEntity
 import com.sndiy.chatfin.core.data.local.entity.TransactionEntity
 import com.sndiy.chatfin.core.data.local.entity.WalletEntity
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import javax.inject.Inject
@@ -27,11 +29,14 @@ class BackupRepository @Inject constructor(
     private val categoryDao: CategoryDao,
     private val transactionDao: TransactionDao
 ) {
-    private val gson: Gson = GsonBuilder().setPrettyPrinting().create()
+    private val jsonFormatter = Json {
+        prettyPrint = true
+        ignoreUnknownKeys = true
+    }
 
     // ── Export ────────────────────────────────────────────────────────────────
-    suspend fun exportToUri(uri: Uri): Result<String> {
-        return try {
+    suspend fun exportToUri(uri: Uri): Result<String> = withContext(Dispatchers.IO) {
+        try {
             val accounts     = accountDao.getAllAccounts().first()
             val wallets      = accounts.flatMap { walletDao.getWalletsByAccount(it.id).first() }
             val categories   = accounts.flatMap {
@@ -49,10 +54,10 @@ class BackupRepository @Inject constructor(
                 transactions = transactions
             )
 
-            val json = gson.toJson(backup)
+            val json = jsonFormatter.encodeToString(backup)
             context.contentResolver.openOutputStream(uri)?.use { stream ->
                 stream.write(json.toByteArray())
-            } ?: return Result.failure(Exception("Tidak bisa membuka file"))
+            } ?: return@withContext Result.failure(Exception("Tidak bisa membuka file"))
 
             Result.success("Berhasil export ${transactions.size} transaksi")
         } catch (e: Exception) {
@@ -61,17 +66,20 @@ class BackupRepository @Inject constructor(
     }
 
     // ── Import ────────────────────────────────────────────────────────────────
-    suspend fun importFromUri(uri: Uri): Result<String> {
-        return try {
+    suspend fun importFromUri(uri: Uri): Result<String> = withContext(Dispatchers.IO) {
+        try {
             val json = context.contentResolver.openInputStream(uri)?.use { stream ->
                 stream.bufferedReader().readText()
-            } ?: return Result.failure(Exception("Tidak bisa membaca file"))
+            } ?: return@withContext Result.failure(Exception("Tidak bisa membaca file"))
 
-            val backup = gson.fromJson(json, BackupData::class.java)
-                ?: return Result.failure(Exception("Format file tidak valid"))
+            val backup = try {
+                jsonFormatter.decodeFromString<BackupData>(json)
+            } catch (e: Exception) {
+                return@withContext Result.failure(Exception("Format file tidak valid"))
+            }
 
             if (backup.version != 1) {
-                return Result.failure(Exception("Versi backup tidak kompatibel"))
+                return@withContext Result.failure(Exception("Versi backup tidak kompatibel"))
             }
 
             // Insert semua data — Room akan skip duplicate (INSERT OR IGNORE)

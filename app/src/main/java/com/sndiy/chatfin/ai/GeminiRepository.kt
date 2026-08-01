@@ -18,7 +18,9 @@ class GeminiRepository @Inject constructor(
         return try {
             val rawText = client.sendMessage(userMessage, chatHistory, systemPrompt)
             quotaRetryCount = 0
-            android.util.Log.d("GeminiRepo", "OK dengan ${client.currentModelName}: ${rawText.take(200)}")
+            // JANGAN mencetak isi rawText — respons AI berisi analisis keuangan
+            // user (nominal, saldo, kategori pengeluaran). Cukup metadata.
+            android.util.Log.d("GeminiRepo", "OK dengan ${client.currentModelName} (${rawText.length} char)")
             // Setelah sukses, kembalikan ke primary
             Result.success(parser.parse(rawText)).also {
                 // Reset ke primary kalau sedang di fallback
@@ -28,6 +30,10 @@ class GeminiRepository @Inject constructor(
             }
         } catch (e: Exception) {
             when {
+                e is ApiKeyMissingException -> {
+                    quotaRetryCount = 0
+                    Result.failure(e)
+                }
                 client.isQuotaError(e) -> {
                     val failedModel = client.currentModelName
                     quotaRetryCount++

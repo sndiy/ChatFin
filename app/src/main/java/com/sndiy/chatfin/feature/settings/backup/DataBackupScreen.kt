@@ -3,6 +3,11 @@ package com.sndiy.chatfin.feature.settings.backup
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -148,7 +153,11 @@ fun DataBackupScreen(
                 }
 
                 // Loading indicator sync
-                if (isSyncing) {
+                AnimatedVisibility(
+                    visible = isSyncing,
+                    enter   = fadeIn() + expandVertically(),
+                    exit    = fadeOut() + shrinkVertically()
+                ) {
                     Card(modifier = Modifier.fillMaxWidth()) {
                         Row(
                             modifier              = Modifier.padding(16.dp).fillMaxWidth(),
@@ -272,7 +281,11 @@ fun DataBackupScreen(
                 onClick     = { importLauncher.launch(arrayOf("application/json", "*/*")) }
             )
 
-            if (backupState.isLoading) {
+            AnimatedVisibility(
+                visible = backupState.isLoading,
+                enter   = fadeIn() + expandVertically(),
+                exit    = fadeOut() + shrinkVertically()
+            ) {
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Row(
                         modifier              = Modifier.padding(16.dp).fillMaxWidth(),

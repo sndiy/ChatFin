@@ -5,9 +5,11 @@ package com.sndiy.chatfin.feature.export.ui
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -27,6 +29,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.sndiy.chatfin.core.ui.animation.pressScale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -120,11 +123,16 @@ fun ExportScreen(
                     ) {
                         row.forEach { period ->
                             val isSelected = uiState.selectedPeriod == period
+                            val interactionSource = remember { MutableInteractionSource() }
                             Surface(
                                 modifier = Modifier
                                     .weight(1f)
+                                    .pressScale(interactionSource)
                                     .clip(RoundedCornerShape(12.dp))
-                                    .clickable { viewModel.selectPeriod(period) }
+                                    .clickable(
+                                        interactionSource = interactionSource,
+                                        indication         = LocalIndication.current
+                                    ) { viewModel.selectPeriod(period) }
                                     .then(
                                         if (isSelected) Modifier.border(
                                             1.5.dp,

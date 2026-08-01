@@ -6,11 +6,13 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -31,6 +33,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.sndiy.chatfin.core.data.local.entity.BudgetEntity
 import com.sndiy.chatfin.core.data.local.entity.CategoryEntity
+import com.sndiy.chatfin.core.ui.animation.StaggeredEntrance
+import com.sndiy.chatfin.core.ui.animation.pressScale
 import com.sndiy.chatfin.core.ui.theme.ExpenseRed
 import com.sndiy.chatfin.core.ui.theme.IncomeGreen
 import com.sndiy.chatfin.feature.finance.budget.data.repository.BudgetWithSpent
@@ -84,21 +88,25 @@ fun BudgetScreen(
         ) {
             // ── Month Navigator ──────────────────────────────────────────────
             item {
-                MonthNavigator(
-                    month     = uiState.month,
-                    year      = uiState.year,
-                    onPrev    = { viewModel.navigateMonth(-1) },
-                    onNext    = { viewModel.navigateMonth(1) }
-                )
+                StaggeredEntrance(index = 0) {
+                    MonthNavigator(
+                        month     = uiState.month,
+                        year      = uiState.year,
+                        onPrev    = { viewModel.navigateMonth(-1) },
+                        onNext    = { viewModel.navigateMonth(1) }
+                    )
+                }
             }
 
             // ── Summary Card ─────────────────────────────────────────────────
             item {
-                BudgetSummaryCard(
-                    totalBudget = uiState.totalBudget,
-                    totalSpent  = uiState.totalSpent,
-                    fmt         = fmt
-                )
+                StaggeredEntrance(index = 1) {
+                    BudgetSummaryCard(
+                        totalBudget = uiState.totalBudget,
+                        totalSpent  = uiState.totalSpent,
+                        fmt         = fmt
+                    )
+                }
             }
 
             // ── Budget List ──────────────────────────────────────────────────
@@ -116,13 +124,15 @@ fun BudgetScreen(
                     )
                 }
             } else {
-                items(uiState.budgets, key = { it.budget.id }) { budgetWithSpent ->
-                    BudgetItem(
-                        item     = budgetWithSpent,
-                        fmt      = fmt,
-                        onEdit   = { viewModel.showEditDialog(budgetWithSpent.budget) },
-                        onDelete = { budgetToDelete = budgetWithSpent.budget }
-                    )
+                itemsIndexed(uiState.budgets, key = { _, it -> it.budget.id }) { idx, budgetWithSpent ->
+                    StaggeredEntrance(index = idx + 2) {
+                        BudgetItem(
+                            item     = budgetWithSpent,
+                            fmt      = fmt,
+                            onEdit   = { viewModel.showEditDialog(budgetWithSpent.budget) },
+                            onDelete = { budgetToDelete = budgetWithSpent.budget }
+                        )
+                    }
                 }
             }
 
@@ -415,11 +425,16 @@ private fun BudgetFormDialog(
                             val catColor = runCatching {
                                 Color(android.graphics.Color.parseColor(cat.colorHex))
                             }.getOrElse { Color.Gray }
+                            val interactionSource = remember { MutableInteractionSource() }
 
                             Surface(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable { selectedCategory = cat },
+                                    .pressScale(interactionSource)
+                                    .clickable(
+                                        interactionSource = interactionSource,
+                                        indication         = LocalIndication.current
+                                    ) { selectedCategory = cat },
                                 color = if (isSelected) catColor.copy(alpha = 0.15f)
                                         else MaterialTheme.colorScheme.surfaceVariant,
                                 shape = MaterialTheme.shapes.small

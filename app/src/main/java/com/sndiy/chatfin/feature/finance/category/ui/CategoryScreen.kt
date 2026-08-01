@@ -1,12 +1,15 @@
 package com.sndiy.chatfin.feature.finance.category.ui
 
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -21,6 +24,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.sndiy.chatfin.core.ui.animation.StaggeredEntrance
+import com.sndiy.chatfin.core.ui.animation.pressScale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -31,6 +36,14 @@ fun CategoryScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var selectedTab by remember { mutableIntStateOf(0) }
     val tabs = listOf("Pengeluaran", "Pemasukan")
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(uiState.errorMessage) {
+        uiState.errorMessage?.let {
+            snackbarHostState.showSnackbar(it)
+            viewModel.clearError()
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -47,7 +60,8 @@ fun CategoryScreen(
                     }
                 }
             )
-        }
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
             TabRow(selectedTabIndex = selectedTab) {
@@ -63,7 +77,11 @@ fun CategoryScreen(
                 }
             }
 
-            if (uiState.categories.isEmpty()) {
+            if (uiState.isLoading && uiState.categories.isEmpty()) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
+                }
+            } else if (uiState.categories.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Icon(Icons.Default.Category, null, modifier = Modifier.size(64.dp),
@@ -74,15 +92,20 @@ fun CategoryScreen(
                     }
                 }
             } else {
-                LazyColumn(contentPadding = PaddingValues(vertical = 8.dp)) {
-                    items(uiState.categories, key = { it.id }) { category ->
-                        CategoryItem(
-                            name      = category.name,
-                            colorHex  = category.colorHex,
-                            isCustom  = category.isCustom,
-                            onEdit    = { viewModel.showEditDialog(category) },
-                            onDelete  = { viewModel.deleteCategory(category) }
-                        )
+                LazyColumn(
+                    contentPadding      = PaddingValues(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    itemsIndexed(uiState.categories, key = { _, it -> it.id }) { idx, category ->
+                        StaggeredEntrance(index = idx) {
+                            CategoryItem(
+                                name      = category.name,
+                                colorHex  = category.colorHex,
+                                isCustom  = category.isCustom,
+                                onEdit    = { viewModel.showEditDialog(category) },
+                                onDelete  = { viewModel.deleteCategory(category) }
+                            )
+                        }
                     }
                 }
             }
@@ -120,16 +143,12 @@ private fun CategoryItem(
     val color = runCatching { Color(android.graphics.Color.parseColor(colorHex)) }
         .getOrElse { MaterialTheme.colorScheme.primary }
 
-    ListItem(
-        headlineContent   = { Text(name) },
-        supportingContent = {
-            Text(
-                if (isCustom) "Kategori kustom" else "Kategori default",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        },
-        leadingContent = {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier              = Modifier.fillMaxWidth().padding(12.dp),
+            verticalAlignment     = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
             Box(
                 modifier         = Modifier.size(40.dp).clip(CircleShape).background(color),
                 contentAlignment = Alignment.Center
@@ -140,8 +159,14 @@ private fun CategoryItem(
                     fontWeight = FontWeight.Bold
                 )
             }
-        },
-        trailingContent = {
+            Column(Modifier.weight(1f)) {
+                Text(name, style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    if (isCustom) "Kategori kustom" else "Kategori default",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
             if (isCustom) {
                 Row {
                     IconButton(onClick = onEdit) {
@@ -155,8 +180,7 @@ private fun CategoryItem(
                 }
             }
         }
-    )
-    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+    }
 }
 
 @Composable
@@ -194,16 +218,21 @@ private fun CategoryDialog(
                     items(colorOptions) { hex ->
                         val color    = Color(android.graphics.Color.parseColor(hex))
                         val selected = hex == formState.colorHex
+                        val interactionSource = remember { MutableInteractionSource() }
                         Box(
                             modifier = Modifier
                                 .size(36.dp)
+                                .pressScale(interactionSource)
                                 .clip(CircleShape)
                                 .background(color)
                                 .then(
                                     if (selected) Modifier.border(3.dp, MaterialTheme.colorScheme.onSurface, CircleShape)
                                     else Modifier
                                 )
-                                .clickable { onColorChange(hex) }
+                                .clickable(
+                                    interactionSource = interactionSource,
+                                    indication         = LocalIndication.current
+                                ) { onColorChange(hex) }
                         )
                     }
                 }

@@ -1,11 +1,3 @@
-// app/src/main/java/com/sndiy/chatfin/feature/chat/ui/ChatComponents.kt
-//
-// Composable yang diekstrak dari ChatScreen.kt:
-// - ChatTopBar, ChatInputBar, ConnectionStatusBanner
-// - UserMessageBubble, AiMessageBubble, TypingIndicatorBubble
-// - ChatWelcomeState, TransactionConfirmCard
-// - parseMarkdown helper
-
 package com.sndiy.chatfin.feature.chat.ui
 
 import androidx.compose.animation.*
@@ -24,6 +16,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -33,39 +26,63 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.*
-import androidx.core.graphics.toColorInt
 import com.sndiy.chatfin.ai.ChatOption
+import com.sndiy.chatfin.core.ui.theme.MaiAccent
+import com.sndiy.chatfin.core.ui.theme.MaiPurple
+import com.sndiy.chatfin.core.ui.theme.MaiPurpleDk
 import java.text.NumberFormat
+import java.time.LocalTime
 import java.util.Locale
 
-internal const val MAI_NAME  = "Sakurajima Mai"
-internal const val MAI_COLOR = "#7E57C2"
+internal const val MAI_NAME  = "Mai"
 
 // ── Top Bar ───────────────────────────────────────────────────────────────────
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun ChatTopBar(accountName: String, onClearChat: () -> Unit) {
-    val color = Color(MAI_COLOR.toColorInt())
+internal fun ChatTopBar(
+    accountName: String,
+    onClearChat: () -> Unit,
+    onShowClearConfirm: () -> Unit = onClearChat
+) {
     TopAppBar(
         title = {
             Row(
                 verticalAlignment     = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
+                // Mai's avatar with gradient
                 Box(
-                    modifier         = Modifier.size(38.dp).clip(CircleShape).background(color),
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(
+                            Brush.linearGradient(listOf(MaiPurple, MaiPurpleDk))
+                        ),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("M", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Text(
+                        "舞",
+                        color      = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize   = 18.sp
+                    )
                 }
                 Column {
-                    Text(MAI_NAME, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                    Text(accountName, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        "Sakurajima $MAI_NAME",
+                        style      = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        accountName,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
         },
         actions = {
-            IconButton(onClick = onClearChat) {
+            IconButton(onClick = onShowClearConfirm) {
                 Icon(Icons.Outlined.DeleteSweep, contentDescription = "Hapus chat")
             }
         }
@@ -98,7 +115,7 @@ internal fun ChatInputBar(
                             !enabled && !isBotMode -> "Memeriksa koneksi..."
                             isTyping               -> "Mai sedang mengetik..."
                             isBotMode              -> "Ketik perintah bot (help untuk bantuan)..."
-                            else                   -> "Ketik pesan atau catat transaksi..."
+                            else                   -> "Tulis sesuatu ke Mai..."
                         },
                         style = MaterialTheme.typography.bodyMedium
                     )
@@ -109,8 +126,10 @@ internal fun ChatInputBar(
                 keyboardActions = KeyboardActions(onSend = { if (!isTyping) onSend() }),
                 shape  = RoundedCornerShape(24.dp),
                 colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor   = MaiPurple,
                     unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
-                    disabledBorderColor  = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+                    disabledBorderColor  = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
+                    cursorColor          = MaiPurple
                 ),
                 modifier = Modifier.weight(1f)
             )
@@ -136,7 +155,13 @@ internal fun ChatInputBar(
                     FilledIconButton(
                         onClick  = onSend,
                         enabled  = text.isNotBlank() && enabled,
-                        modifier = Modifier.size(48.dp)
+                        modifier = Modifier.size(48.dp),
+                        colors   = IconButtonDefaults.filledIconButtonColors(
+                            containerColor = MaiPurple,
+                            contentColor   = Color.White,
+                            disabledContainerColor = MaiPurple.copy(alpha = 0.3f),
+                            disabledContentColor   = Color.White.copy(alpha = 0.5f)
+                        )
                     ) { Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Kirim") }
                 }
             }
@@ -168,7 +193,7 @@ internal fun ConnectionStatusBanner(
                     if (countdown > 0) {
                         Text("${countdown}s", style = MaterialTheme.typography.labelMedium, color = Color.White.copy(alpha = 0.5f))
                     } else {
-                        TextButton(onClick = onRetry, colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFF64D2FF))) {
+                        TextButton(onClick = onRetry, colors = ButtonDefaults.textButtonColors(contentColor = MaiAccent)) {
                             Text("Coba lagi", style = MaterialTheme.typography.labelMedium)
                         }
                     }
@@ -184,13 +209,13 @@ internal fun ConnectionStatusBanner(
                 ) {
                     Icon(Icons.Default.CloudOff, null, tint = Color(0xFFFF9500), modifier = Modifier.size(20.dp))
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("AI sedang sibuk", style = MaterialTheme.typography.labelMedium, color = Color.White, fontWeight = FontWeight.SemiBold)
+                        Text("Mai sedang istirahat", style = MaterialTheme.typography.labelMedium, color = Color.White, fontWeight = FontWeight.SemiBold)
                         Text("Batas kuota tercapai", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.6f))
                     }
                     if (countdown > 0) {
                         Text("${countdown}s", style = MaterialTheme.typography.labelMedium, color = Color.White.copy(alpha = 0.5f))
                     } else {
-                        TextButton(onClick = onRetry, colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFF64D2FF))) {
+                        TextButton(onClick = onRetry, colors = ButtonDefaults.textButtonColors(contentColor = MaiAccent)) {
                             Text("Coba lagi", style = MaterialTheme.typography.labelMedium)
                         }
                     }
@@ -223,9 +248,14 @@ internal fun UserMessageBubble(text: String) {
         Surface(
             shape    = RoundedCornerShape(topStart = 18.dp, topEnd = 4.dp, bottomStart = 18.dp, bottomEnd = 18.dp),
             color    = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.widthIn(max = 280.dp)
+            modifier = Modifier.widthIn(max = 300.dp)
         ) {
-            Text(text = text, color = MaterialTheme.colorScheme.onPrimary, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp))
+            Text(
+                text     = text,
+                color    = MaterialTheme.colorScheme.onPrimary,
+                style    = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
+            )
         }
     }
 }
@@ -241,39 +271,83 @@ internal fun AiMessageBubble(
     onConfirmTransaction: () -> Unit,
     onCancelTransaction: () -> Unit
 ) {
-    Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.Start, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        if (text.isNotBlank()) {
-            Surface(
-                shape    = RoundedCornerShape(topStart = 4.dp, topEnd = 18.dp, bottomStart = 18.dp, bottomEnd = 18.dp),
-                color    = if (isError) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.surfaceVariant,
-                modifier = Modifier.widthIn(max = 300.dp)
-            ) {
-                Text(
-                    text     = parseMarkdown(text),
-                    style    = MaterialTheme.typography.bodyMedium,
-                    color    = if (isError) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp).fillMaxWidth()
-                )
-            }
+    Row(
+        modifier              = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.Start,
+        verticalAlignment     = Alignment.Top
+    ) {
+        // Mini Mai avatar
+        Box(
+            modifier = Modifier
+                .padding(top = 2.dp)
+                .size(28.dp)
+                .clip(CircleShape)
+                .background(Brush.linearGradient(listOf(MaiPurple, MaiPurpleDk))),
+            contentAlignment = Alignment.Center
+        ) {
+            Text("舞", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
         }
-        when (option) {
-            is ChatOption.CategoryOptions -> OptionChips(option.options, Icons.Default.Category, onOptionSelected)
-            is ChatOption.WalletOptions   -> OptionChips(option.options, Icons.Default.AccountBalanceWallet, onOptionSelected)
-            is ChatOption.TransactionConfirm -> TransactionConfirmCard(option, pendingTransaction, onConfirmTransaction, onCancelTransaction)
-            is ChatOption.YesNo -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { onOptionSelected("Tidak") }) { Text("Tidak") }
-                Button(onClick = { onOptionSelected("Ya") }) { Text("Ya") }
+
+        Spacer(Modifier.width(8.dp))
+
+        Column(
+            modifier              = Modifier.weight(1f),
+            horizontalAlignment   = Alignment.Start,
+            verticalArrangement   = Arrangement.spacedBy(6.dp)
+        ) {
+            if (text.isNotBlank()) {
+                Surface(
+                    shape    = RoundedCornerShape(topStart = 4.dp, topEnd = 18.dp, bottomStart = 18.dp, bottomEnd = 18.dp),
+                    color    = if (isError) MaterialTheme.colorScheme.errorContainer
+                              else MaterialTheme.colorScheme.surfaceVariant,
+                    modifier = Modifier.widthIn(max = 300.dp)
+                ) {
+                    Text(
+                        text     = parseMarkdown(text),
+                        style    = MaterialTheme.typography.bodyMedium,
+                        color    = if (isError) MaterialTheme.colorScheme.onErrorContainer
+                                  else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp).fillMaxWidth()
+                    )
+                }
             }
-            null -> {}
+            when (option) {
+                is ChatOption.CategoryOptions    -> OptionChips(option.options, Icons.Default.Category, onOptionSelected)
+                is ChatOption.WalletOptions      -> OptionChips(option.options, Icons.Default.AccountBalanceWallet, onOptionSelected)
+                is ChatOption.TransactionConfirm -> TransactionConfirmCard(option, pendingTransaction, onConfirmTransaction, onCancelTransaction)
+                is ChatOption.YesNo -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { onOptionSelected("Tidak") }) { Text("Tidak") }
+                    Button(
+                        onClick = { onOptionSelected("Ya") },
+                        colors  = ButtonDefaults.buttonColors(containerColor = MaiPurple)
+                    ) { Text("Ya") }
+                }
+                null -> {}
+            }
         }
     }
 }
 
 @Composable
-private fun OptionChips(options: List<String>, icon: androidx.compose.ui.graphics.vector.ImageVector, onSelect: (String) -> Unit) {
-    Row(modifier = Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+private fun OptionChips(
+    options: List<String>,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    onSelect: (String) -> Unit
+) {
+    Row(
+        modifier              = Modifier.horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
         options.forEach { opt ->
-            InputChip(selected = false, onClick = { onSelect(opt) }, label = { Text(opt) }, leadingIcon = { Icon(icon, null, Modifier.size(16.dp)) })
+            InputChip(
+                selected  = false,
+                onClick   = { onSelect(opt) },
+                label     = { Text(opt) },
+                leadingIcon = { Icon(icon, null, Modifier.size(16.dp)) },
+                colors    = InputChipDefaults.inputChipColors(
+                    labelColor = MaterialTheme.colorScheme.onSurface
+                )
+            )
         }
     }
 }
@@ -295,21 +369,36 @@ private fun TransactionConfirmCard(
     val displayTitle    = pendingTransaction?.desc?.takeIf { it.isNotBlank() } ?: confirm.title.takeIf { it.isNotBlank() }
     val canSave         = pendingTransaction != null && displayAmount > 0
 
-    Card(modifier = Modifier.widthIn(max = 300.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))) {
+    Card(
+        modifier = Modifier.widthIn(max = 300.dp),
+        border   = BorderStroke(1.dp, MaiPurple.copy(alpha = 0.3f)),
+        colors   = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        )
+    ) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Icon(Icons.Default.Receipt, null, tint = typeColor, modifier = Modifier.size(20.dp))
                 Text("Konfirmasi $typeLabel", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
             }
-            HorizontalDivider()
+            HorizontalDivider(color = MaiPurple.copy(alpha = 0.15f))
             displayTitle?.let { DetailRow("Judul", it) }
             DetailRow("Nominal", "Rp ${fmt.format(displayAmount)}")
             DetailRow("Kategori", displayCategory)
             DetailRow("Dompet", displayWallet.ifBlank { "—" })
-            HorizontalDivider()
+            HorizontalDivider(color = MaiPurple.copy(alpha = 0.15f))
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = onCancel, modifier = Modifier.weight(1f)) { Text("Batal") }
-                Button(onClick = onConfirm, enabled = canSave, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = typeColor)) { Text("Simpan") }
+                OutlinedButton(
+                    onClick  = onCancel,
+                    modifier = Modifier.weight(1f),
+                    border   = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+                ) { Text("Batal") }
+                Button(
+                    onClick  = onConfirm,
+                    enabled  = canSave,
+                    modifier = Modifier.weight(1f),
+                    colors   = ButtonDefaults.buttonColors(containerColor = typeColor)
+                ) { Text("Simpan") }
             }
         }
     }
@@ -328,15 +417,45 @@ private fun DetailRow(label: String, value: String) {
 internal fun TypingIndicatorBubble() {
     val infiniteTransition = rememberInfiniteTransition(label = "typing")
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
-        Surface(shape = RoundedCornerShape(4.dp, 18.dp, 18.dp, 18.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
-            Row(modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+        // Mini Mai avatar
+        Box(
+            modifier = Modifier
+                .padding(top = 2.dp)
+                .size(28.dp)
+                .clip(CircleShape)
+                .background(Brush.linearGradient(listOf(MaiPurple, MaiPurpleDk))),
+            contentAlignment = Alignment.Center
+        ) {
+            Text("舞", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        }
+        Spacer(Modifier.width(8.dp))
+        Surface(
+            shape = RoundedCornerShape(4.dp, 18.dp, 18.dp, 18.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant
+        ) {
+            Row(
+                modifier              = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment     = Alignment.CenterVertically
+            ) {
                 repeat(3) { index ->
                     val offsetY by infiniteTransition.animateFloat(
-                        initialValue = 0f, targetValue = -6f,
-                        animationSpec = infiniteRepeatable(animation = tween(400, easing = EaseInOut), repeatMode = RepeatMode.Reverse, initialStartOffset = StartOffset(index * 120)),
+                        initialValue  = 0f,
+                        targetValue   = -6f,
+                        animationSpec = infiniteRepeatable(
+                            animation          = tween(400, easing = EaseInOut),
+                            repeatMode         = RepeatMode.Reverse,
+                            initialStartOffset = StartOffset(index * 120)
+                        ),
                         label = "dot$index"
                     )
-                    Box(Modifier.size(8.dp).offset(y = offsetY.dp).clip(CircleShape).background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)))
+                    Box(
+                        Modifier
+                            .size(8.dp)
+                            .offset(y = offsetY.dp)
+                            .clip(CircleShape)
+                            .background(MaiPurple.copy(alpha = 0.6f))
+                    )
                 }
             }
         }
@@ -346,34 +465,141 @@ internal fun TypingIndicatorBubble() {
 // ── Welcome State ─────────────────────────────────────────────────────────────
 @Composable
 internal fun ChatWelcomeState(accountName: String?, onQuickAction: (String) -> Unit) {
-    val quickActions = listOf("💰 Lihat saldo" to "saldo", "📊 Ringkasan bulan ini" to "rangkuman", "➕ Catat pemasukan" to "setor", "➖ Catat pengeluaran" to "tarik")
-    val maiColor = Color(MAI_COLOR.toColorInt())
+    val hour = LocalTime.now().hour
+    val greeting = when {
+        hour < 10  -> "Ohayou"
+        hour < 14  -> "Konichiwa"
+        hour < 18  -> "Konichiwa"
+        hour < 21  -> "Konbanwa"
+        else       -> "Mada okiteru no?"
+    }
+    val subGreeting = when {
+        hour < 10  -> "Pagi-pagi sudah buka app keuangan... rajin juga."
+        hour < 14  -> "Mau cek keuangan? ...bukan berarti aku peduli, ya."
+        hour < 18  -> "*membalik rambut* Ada yang mau kau tanyakan?"
+        hour < 21  -> "Malam ini mau review pengeluaran?"
+        else       -> "*menghela napas* Sudah malam. Cepat selesaikan urusanmu."
+    }
 
-    Column(modifier = Modifier.fillMaxSize().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-        Box(modifier = Modifier.size(80.dp).clip(CircleShape).background(maiColor), contentAlignment = Alignment.Center) {
-            Text("M", style = MaterialTheme.typography.displaySmall, color = Color.White, fontWeight = FontWeight.Bold)
+    val quickActions = listOf(
+        "💰 Cek saldo"               to "saldo",
+        "📊 Rangkuman bulan ini"      to "rangkuman",
+        "🤔 Aku boros nggak?"         to "Mai, aku boros nggak bulan ini?",
+        "💡 Tips hemat"               to "Mai, kasih tips hemat dong"
+    )
+
+    Column(
+        modifier            = Modifier
+            .fillMaxSize()
+            .padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        // Mai avatar
+        Box(
+            modifier = Modifier
+                .size(88.dp)
+                .clip(CircleShape)
+                .background(Brush.linearGradient(listOf(MaiPurple, MaiPurpleDk))),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                "舞",
+                style      = MaterialTheme.typography.displaySmall,
+                color      = Color.White,
+                fontWeight = FontWeight.Bold
+            )
         }
-        Spacer(Modifier.height(16.dp))
-        Text("Halo! Aku $MAI_NAME", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+
+        Spacer(Modifier.height(20.dp))
+
+        Text(
+            "$greeting.",
+            style      = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold,
+            textAlign  = TextAlign.Center,
+            color      = MaterialTheme.colorScheme.onBackground
+        )
+
+        Spacer(Modifier.height(4.dp))
+
+        Text(
+            subGreeting,
+            style     = MaterialTheme.typography.bodyMedium,
+            color     = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center
+        )
+
         if (accountName != null) {
-            Text("Mengelola akun: $accountName", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Akun: $accountName",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaiPurple.copy(alpha = 0.7f),
+                textAlign = TextAlign.Center
+            )
         }
-        Spacer(Modifier.height(8.dp))
-        Text("Ceritain aja mau catat transaksi apa,\natau tanya seputar keuanganmu!", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
-        Spacer(Modifier.height(32.dp))
-        Text("Mulai dengan:", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+        Spacer(Modifier.height(36.dp))
+
+        Text(
+            "Mau apa?",
+            style      = MaterialTheme.typography.labelLarge,
+            color      = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontWeight = FontWeight.Medium
+        )
+
         Spacer(Modifier.height(12.dp))
+
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             quickActions.chunked(2).forEach { row ->
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     row.forEach { (label, command) ->
-                        SuggestionChip(onClick = { onQuickAction(command) }, label = { Text(label) }, modifier = Modifier.weight(1f))
+                        SuggestionChip(
+                            onClick  = { onQuickAction(command) },
+                            label    = { Text(label, style = MaterialTheme.typography.labelMedium) },
+                            modifier = Modifier.weight(1f),
+                            border   = SuggestionChipDefaults.suggestionChipBorder(
+                                enabled      = true,
+                                borderColor  = MaiPurple.copy(alpha = 0.3f),
+                                borderWidth  = 1.dp
+                            )
+                        )
                     }
                     if (row.size == 1) Spacer(Modifier.weight(1f))
                 }
             }
         }
     }
+}
+
+// ── Clear Chat Confirmation Dialog ────────────────────────────────────────────
+@Composable
+internal fun ClearChatDialog(
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Default.DeleteSweep, null, tint = MaiPurple) },
+        title = { Text("Hapus Semua Chat?") },
+        text = {
+            Text(
+                "*menatap tajam* Yakin mau hapus semua percakapan kita? " +
+                "Aku tidak akan mengulang apa yang sudah kukatakan.",
+                style = MaterialTheme.typography.bodyMedium
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                colors  = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+            ) { Text("Hapus") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Batal") }
+        }
+    )
 }
 
 // ── Markdown Parser ───────────────────────────────────────────────────────────
@@ -396,7 +622,7 @@ internal fun parseMarkdown(text: String) = buildAnnotatedString {
                         }
                         remaining.startsWith("*") -> {
                             val end = remaining.indexOf("*", 1)
-                            if (end != -1) { withStyle(SpanStyle(fontStyle = FontStyle.Italic)) { append(remaining.substring(1, end)) }; remaining = remaining.substring(end + 1) }
+                            if (end != -1) { withStyle(SpanStyle(fontStyle = FontStyle.Italic, color = MaiPurple.copy(alpha = 0.7f))) { append(remaining.substring(1, end)) }; remaining = remaining.substring(end + 1) }
                             else { append(remaining); remaining = "" }
                         }
                         else -> {

@@ -1,6 +1,8 @@
 package com.sndiy.chatfin.feature.settings.ui
 
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -13,10 +15,20 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.ui.res.stringResource
 import androidx.navigation.NavController
+import com.sndiy.chatfin.BuildConfig
+import com.sndiy.chatfin.R
+import com.sndiy.chatfin.core.persona.PersonaPresets
+import com.sndiy.chatfin.core.ui.animation.pressScale
 import com.sndiy.chatfin.core.ui.navigation.Screen
 import com.sndiy.chatfin.feature.auth.ui.AuthViewModel
+import com.sndiy.chatfin.feature.settings.apikey.ApiKeyViewModel
+import com.sndiy.chatfin.feature.settings.persona.PersonaViewModel
 
 // FIX BUG 4: Tambah Scaffold + TopAppBar agar konsisten dengan Dashboard/Riwayat/Chat
 
@@ -24,11 +36,28 @@ import com.sndiy.chatfin.feature.auth.ui.AuthViewModel
 @Composable
 fun SettingsScreen(
     navController: NavController,
-    authViewModel: AuthViewModel = hiltViewModel()
+    authViewModel: AuthViewModel = hiltViewModel(),
+    apiKeyViewModel: ApiKeyViewModel = hiltViewModel(),
+    personaViewModel: PersonaViewModel = hiltViewModel()
 ) {
     val authState by authViewModel.uiState.collectAsStateWithLifecycle()
+    val apiKeyState by apiKeyViewModel.uiState.collectAsStateWithLifecycle()
+    val activePersonaId by personaViewModel.activePersonaId.collectAsStateWithLifecycle()
     val isLoggedIn = authState.currentUser != null
     val userEmail  = authState.currentUser?.email ?: ""
+
+    // apiKeyViewModel melekat ke back stack entry Setelan (hidup lebih lama
+    // dari satu kunjungan ke ApiKeyScreen) — subtitle "Aktif"/"Belum diset"
+    // wajib disegarkan tiap kali layar ini kembali terlihat, bukan cuma sekali
+    // saat pertama dibuat, atau status key jadi basi setelah simpan/hapus.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) apiKeyViewModel.refresh()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     Scaffold(
         topBar = {
@@ -70,6 +99,28 @@ fun SettingsScreen(
                 )
             }
 
+            SettingsSection(title = "Asisten AI") {
+                SettingsItem(
+                    icon = Icons.Default.VpnKey,
+                    title = stringResource(R.string.apikey_menu_title),
+                    subtitle = if (apiKeyState.hasStoredKey) {
+                        stringResource(R.string.apikey_menu_subtitle_active)
+                    } else {
+                        stringResource(R.string.apikey_menu_subtitle_inactive)
+                    },
+                    onClick = { navController.navigate(Screen.SettingsApiKey.route) }
+                )
+                SettingsItem(
+                    icon = Icons.Default.Face,
+                    title = stringResource(R.string.persona_menu_title),
+                    subtitle = stringResource(
+                        R.string.persona_menu_subtitle,
+                        PersonaPresets.byId(activePersonaId).displayName
+                    ),
+                    onClick = { navController.navigate(Screen.SettingsPersona.route) }
+                )
+            }
+
             SettingsSection(title = "Tampilan") {
                 SettingsItem(
                     icon = Icons.Default.Palette,
@@ -95,7 +146,7 @@ fun SettingsScreen(
                 SettingsItem(
                     icon = Icons.Default.Info,
                     title = "Tentang ChatFin",
-                    subtitle = "Versi 2.3.1",
+                    subtitle = "Versi ${BuildConfig.VERSION_NAME}",
                     onClick = { navController.navigate(Screen.SettingsAbout.route) }
                 )
             }
@@ -127,6 +178,7 @@ private fun SettingsItem(
     subtitleColor: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.onSurfaceVariant,
     onClick: () -> Unit
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
     ListItem(
         headlineContent = { Text(title, style = MaterialTheme.typography.bodyLarge) },
         supportingContent = {
@@ -142,6 +194,12 @@ private fun SettingsItem(
                 tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
             )
         },
-        modifier = Modifier.clickable(onClick = onClick)
+        modifier = Modifier
+            .pressScale(interactionSource, pressedScale = 0.985f)
+            .clickable(
+                interactionSource = interactionSource,
+                indication         = LocalIndication.current,
+                onClick            = onClick
+            )
     )
 }

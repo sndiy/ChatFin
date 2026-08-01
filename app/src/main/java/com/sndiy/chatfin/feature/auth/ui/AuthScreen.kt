@@ -1,5 +1,10 @@
 package com.sndiy.chatfin.feature.auth.ui
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
@@ -120,14 +125,19 @@ fun AuthScreen(
         }
 
         // ── Error message ─────────────────────────────────────────────────────
-        if (uiState.authState is AuthState.Error) {
+        AnimatedVisibility(
+            visible = uiState.authState is AuthState.Error,
+            enter   = fadeIn() + expandVertically(),
+            exit    = fadeOut() + shrinkVertically()
+        ) {
+            val message = (uiState.authState as? AuthState.Error)?.message ?: ""
             Card(
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.errorContainer
                 )
             ) {
                 Text(
-                    (uiState.authState as AuthState.Error).message,
+                    message,
                     style    = MaterialTheme.typography.bodySmall,
                     color    = MaterialTheme.colorScheme.onErrorContainer,
                     modifier = Modifier.padding(12.dp)

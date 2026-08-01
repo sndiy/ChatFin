@@ -2,9 +2,11 @@
 
 package com.sndiy.chatfin.feature.finance.transaction.ui
 
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -27,6 +29,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.sndiy.chatfin.core.data.local.entity.CategoryEntity
 import com.sndiy.chatfin.core.data.local.entity.WalletEntity
+import com.sndiy.chatfin.core.ui.animation.pressScale
 import java.text.NumberFormat
 import java.util.Locale
 
@@ -142,14 +145,6 @@ fun TransactionFormScreen(
                     modifier      = Modifier.fillMaxWidth()
                 )
 
-                // ── Recurring ─────────────────────────────────────────────────
-                RecurringToggle(
-                    isRecurring       = formState.isRecurring,
-                    interval          = formState.recurringInterval,
-                    onToggle          = viewModel::onRecurringChange,
-                    onIntervalChange  = viewModel::onRecurringIntervalChange
-                )
-
                 Spacer(modifier = Modifier.height(8.dp))
 
                 // ── Tombol Simpan ─────────────────────────────────────────────
@@ -206,10 +201,15 @@ private fun TypeSelector(
                 else                             -> MaterialTheme.colorScheme.primary
             }
 
+            val interactionSource = remember { MutableInteractionSource() }
             Surface(
                 modifier      = Modifier
                     .weight(1f)
-                    .clickable { onTypeChange(type) },
+                    .pressScale(interactionSource)
+                    .clickable(
+                        interactionSource = interactionSource,
+                        indication         = LocalIndication.current
+                    ) { onTypeChange(type) },
                 color         = containerColor,
                 shape         = MaterialTheme.shapes.medium
             ) {
@@ -356,10 +356,12 @@ private fun CategoryGrid(
                 val color = runCatching {
                     Color(android.graphics.Color.parseColor(category.colorHex))
                 }.getOrElse { MaterialTheme.colorScheme.primary }
+                val interactionSource = remember { MutableInteractionSource() }
 
                 Column(
                     modifier            = Modifier
                         .weight(1f)
+                        .pressScale(interactionSource)
                         .clip(MaterialTheme.shapes.medium)
                         .background(
                             if (isSelected) color.copy(alpha = 0.2f)
@@ -370,7 +372,10 @@ private fun CategoryGrid(
                             color = if (isSelected) color else Color.Transparent,
                             shape = MaterialTheme.shapes.medium
                         )
-                        .clickable { onSelect(category) }
+                        .clickable(
+                            interactionSource = interactionSource,
+                            indication         = LocalIndication.current
+                        ) { onSelect(category) }
                         .padding(8.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -403,48 +408,6 @@ private fun CategoryGrid(
             }
         }
         Spacer(modifier = Modifier.height(8.dp))
-    }
-}
-
-// ── Toggle transaksi berulang ─────────────────────────────────────────────────
-@Composable
-private fun RecurringToggle(
-    isRecurring: Boolean,
-    interval: String?,
-    onToggle: (Boolean) -> Unit,
-    onIntervalChange: (String) -> Unit
-) {
-    val intervals = listOf("DAILY" to "Harian", "WEEKLY" to "Mingguan", "MONTHLY" to "Bulanan")
-
-    Column {
-        Row(
-            modifier          = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Column {
-                Text("Transaksi Berulang", style = MaterialTheme.typography.bodyMedium)
-                Text(
-                    "Otomatis dicatat secara berkala",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            Switch(checked = isRecurring, onCheckedChange = onToggle)
-        }
-
-        if (isRecurring) {
-            Spacer(modifier = Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                intervals.forEach { (value, label) ->
-                    FilterChip(
-                        selected = interval == value,
-                        onClick  = { onIntervalChange(value) },
-                        label    = { Text(label) }
-                    )
-                }
-            }
-        }
     }
 }
 

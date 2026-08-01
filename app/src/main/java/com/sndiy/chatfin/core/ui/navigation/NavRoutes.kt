@@ -31,5 +31,6 @@ sealed class Screen(val route: String) {
     data object SettingsTheme  : Screen("settings_theme")
     data object SettingsBackup : Screen("settings_backup")
     data object SettingsAbout  : Screen("settings_about")
-    data object SyncSettings   : Screen("sync_settings")
+    data object SettingsApiKey : Screen("settings_apikey")
+    data object SettingsPersona : Screen("settings_persona")
 }

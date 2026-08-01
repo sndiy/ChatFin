@@ -4,7 +4,9 @@ import com.sndiy.chatfin.core.data.local.entity.CategoryEntity
 import com.sndiy.chatfin.core.data.local.entity.FinanceAccountEntity
 import com.sndiy.chatfin.core.data.local.entity.TransactionEntity
 import com.sndiy.chatfin.core.data.local.entity.WalletEntity
+import kotlinx.serialization.Serializable
 
+@Serializable
 data class BackupData(
     val version: Int                        = 1,
     val exportedAt: String                  = "",

@@ -5,7 +5,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -42,16 +42,21 @@ import com.patrykandpatrick.vico.core.cartesian.layer.LineCartesianLayer
 import com.patrykandpatrick.vico.core.common.component.TextComponent
 import com.patrykandpatrick.vico.core.common.shader.ShaderProvider
 import com.patrykandpatrick.vico.core.common.shape.CorneredShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import com.sndiy.chatfin.core.data.local.entity.WalletEntity
+import com.sndiy.chatfin.core.ui.animation.StaggeredEntrance
+import com.sndiy.chatfin.core.ui.animation.shimmerEffect
 import com.sndiy.chatfin.core.ui.theme.ExpenseRed
 import com.sndiy.chatfin.core.ui.theme.IncomeGreen
-import com.sndiy.chatfin.feature.finance.dashboard.ui.BudgetOverviewSection
+import com.sndiy.chatfin.core.ui.theme.MaiPurple
+import com.sndiy.chatfin.core.ui.theme.MaiPurpleDk
 import com.sndiy.chatfin.feature.finance.analytics.ui.AnalyticsPeriod
 import com.sndiy.chatfin.feature.finance.analytics.ui.CategorySlice
 import com.sndiy.chatfin.feature.finance.analytics.ui.DailyExpensePoint
 import com.sndiy.chatfin.feature.finance.analytics.ui.MonthlyBarEntry
 import java.text.NumberFormat
 import java.util.Locale
+import kotlin.math.roundToLong
 
 private val donutColors = listOf(
     Color(0xFF5B6EF5), Color(0xFF7E57C2), Color(0xFF26A69A),
@@ -94,10 +99,9 @@ fun DashboardScreen(
         }
     ) { padding ->
         if (uiState.isLoading) {
-            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
-            }
+            DashboardLoadingSkeleton(modifier = Modifier.padding(padding))
         } else {
+            var seq = 0
             LazyColumn(
                 modifier            = Modifier.fillMaxSize().padding(padding),
                 contentPadding      = PaddingValues(16.dp),
@@ -105,63 +109,86 @@ fun DashboardScreen(
             ) {
                 // ── Summary saldo ─────────────────────────────────────────────
                 item {
-                    BalanceSummaryCard(
-                        totalBalance   = uiState.totalBalance,
-                        monthlyIncome  = uiState.monthlyIncome,
-                        monthlyExpense = uiState.monthlyExpense
-                    )
+                    StaggeredEntrance(index = seq++) {
+                        BalanceSummaryCard(
+                            totalBalance   = uiState.totalBalance,
+                            monthlyIncome  = uiState.monthlyIncome,
+                            monthlyExpense = uiState.monthlyExpense
+                        )
+                    }
+                }
+
+                // ── Mai's Daily Insight ───────────────────────────────────────
+                if (uiState.maiInsight.isNotBlank()) {
+                    item {
+                        StaggeredEntrance(index = seq++) {
+                            MaiInsightCard(insight = uiState.maiInsight)
+                        }
+                    }
                 }
 
                 // ── Dompet ────────────────────────────────────────────────────
-                item { WalletsSection(wallets = uiState.wallets) }
+                item {
+                    StaggeredEntrance(index = seq++) {
+                        WalletsSection(wallets = uiState.wallets)
+                    }
+                }
 
                 // -- Budget Overview --
                 item {
-                    BudgetOverviewSection(
-                        budgets            = uiState.budgetOverview,
-                        hasBudgets         = uiState.hasBudgets,
-                        onNavigateToBudget = onNavigateToBudget
-                    )
+                    StaggeredEntrance(index = seq++) {
+                        BudgetOverviewSection(
+                            budgets            = uiState.budgetOverview,
+                            hasBudgets         = uiState.hasBudgets,
+                            onNavigateToBudget = onNavigateToBudget
+                        )
+                    }
                 }
 
                 // ── Transaksi terbaru ─────────────────────────────────────────
                 if (uiState.recentTransactions.isNotEmpty()) {
                     item {
-                        Text(
-                            "Transaksi Terbaru",
-                            style      = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold
-                        )
+                        StaggeredEntrance(index = seq++) {
+                            Text(
+                                "Transaksi Terbaru",
+                                style      = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
                     }
-                    items(uiState.recentTransactions, key = { it.id }) { tx ->
-                        TransactionItem(tx = tx)
+                    itemsIndexed(uiState.recentTransactions, key = { _, tx -> tx.id }) { idx, tx ->
+                        StaggeredEntrance(index = seq + idx) {
+                            TransactionItem(tx = tx)
+                        }
                     }
                 } else {
                     item {
-                        Card(modifier = Modifier.fillMaxWidth()) {
-                            Box(
-                                Modifier.fillMaxWidth().padding(32.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Icon(
-                                        Icons.Default.AddCircleOutline, null,
-                                        modifier = Modifier.size(48.dp),
-                                        tint     = MaterialTheme.colorScheme.primary
-                                    )
-                                    Spacer(Modifier.height(8.dp))
-                                    Text("Belum ada transaksi", style = MaterialTheme.typography.bodyLarge)
-                                    Text(
-                                        "Tap tombol + untuk mulai mencatat",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                    Spacer(Modifier.height(8.dp))
-                                    Text(
-                                        "atau tanya Mai untuk analisis keuanganmu",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                                    )
+                        StaggeredEntrance(index = seq++) {
+                            Card(modifier = Modifier.fillMaxWidth()) {
+                                Box(
+                                    Modifier.fillMaxWidth().padding(32.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Icon(
+                                            Icons.Default.AddCircleOutline, null,
+                                            modifier = Modifier.size(48.dp),
+                                            tint     = MaterialTheme.colorScheme.primary
+                                        )
+                                        Spacer(Modifier.height(8.dp))
+                                        Text("Belum ada transaksi", style = MaterialTheme.typography.bodyLarge)
+                                        Text(
+                                            "Tap tombol + untuk mulai mencatat",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        Spacer(Modifier.height(8.dp))
+                                        Text(
+                                            "atau tanya Mai untuk analisis keuanganmu",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -170,76 +197,86 @@ fun DashboardScreen(
 
                 // ── Divider Analitik ──────────────────────────────────────────
                 item {
-                    Spacer(Modifier.height(4.dp))
-                    HorizontalDivider()
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        "Analitik",
-                        style      = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
+                    StaggeredEntrance(index = seq++) {
+                        Column {
+                            Spacer(Modifier.height(4.dp))
+                            HorizontalDivider()
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                "Analitik",
+                                style      = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
                 }
 
                 // ── Period selector ───────────────────────────────────────────
                 item {
-                    Row(
-                        modifier              = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        AnalyticsPeriod.entries.forEach { period ->
-                            FilterChip(
-                                selected = uiState.selectedPeriod == period,
-                                onClick  = { viewModel.selectPeriod(period) },
-                                label    = { Text(period.label, style = MaterialTheme.typography.labelMedium) },
-                                modifier = Modifier.weight(1f)
-                            )
+                    StaggeredEntrance(index = seq++) {
+                        Row(
+                            modifier              = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            AnalyticsPeriod.entries.forEach { period ->
+                                FilterChip(
+                                    selected = uiState.selectedPeriod == period,
+                                    onClick  = { viewModel.selectPeriod(period) },
+                                    label    = { Text(period.label, style = MaterialTheme.typography.labelMedium) },
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
                         }
                     }
                 }
 
                 // ── Summary analytics ─────────────────────────────────────────
                 item {
-                    val fmt = NumberFormat.getNumberInstance(Locale("id", "ID"))
-                    val net = uiState.analyticsNet
-                    Row(
-                        modifier              = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        AnalyticsMiniCard(
-                            modifier = Modifier.weight(1f),
-                            label    = "Pemasukan",
-                            value    = "Rp ${fmt.format(uiState.analyticsIncome)}",
-                            color    = IncomeGreen
-                        )
-                        AnalyticsMiniCard(
-                            modifier = Modifier.weight(1f),
-                            label    = "Pengeluaran",
-                            value    = "Rp ${fmt.format(uiState.analyticsExpense)}",
-                            color    = ExpenseRed
-                        )
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors   = CardDefaults.cardColors(
-                            containerColor = if (net >= 0) IncomeGreen.copy(alpha = 0.1f)
-                            else ExpenseRed.copy(alpha = 0.1f)
-                        )
-                    ) {
-                        Row(
-                            modifier              = Modifier
-                                .padding(horizontal = 16.dp, vertical = 10.dp)
-                                .fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment     = Alignment.CenterVertically
-                        ) {
-                            Text("Selisih Bersih", style = MaterialTheme.typography.labelLarge)
-                            Text(
-                                "${if (net >= 0) "+" else ""}Rp ${fmt.format(net)}",
-                                style      = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color      = if (net >= 0) IncomeGreen else ExpenseRed
-                            )
+                    StaggeredEntrance(index = seq++) {
+                        val fmt = NumberFormat.getNumberInstance(Locale("id", "ID"))
+                        val net = uiState.analyticsNet
+                        Column {
+                            Row(
+                                modifier              = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                AnalyticsMiniCard(
+                                    modifier = Modifier.weight(1f),
+                                    label    = "Pemasukan",
+                                    value    = "Rp ${fmt.format(uiState.analyticsIncome)}",
+                                    color    = IncomeGreen
+                                )
+                                AnalyticsMiniCard(
+                                    modifier = Modifier.weight(1f),
+                                    label    = "Pengeluaran",
+                                    value    = "Rp ${fmt.format(uiState.analyticsExpense)}",
+                                    color    = ExpenseRed
+                                )
+                            }
+                            Spacer(Modifier.height(8.dp))
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors   = CardDefaults.cardColors(
+                                    containerColor = if (net >= 0) IncomeGreen.copy(alpha = 0.1f)
+                                    else ExpenseRed.copy(alpha = 0.1f)
+                                )
+                            ) {
+                                Row(
+                                    modifier              = Modifier
+                                        .padding(horizontal = 16.dp, vertical = 10.dp)
+                                        .fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment     = Alignment.CenterVertically
+                                ) {
+                                    Text("Selisih Bersih", style = MaterialTheme.typography.labelLarge)
+                                    Text(
+                                        "${if (net >= 0) "+" else ""}Rp ${fmt.format(net)}",
+                                        style      = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color      = if (net >= 0) IncomeGreen else ExpenseRed
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -255,22 +292,28 @@ fun DashboardScreen(
                 } else {
                     if (uiState.dailyExpensePoints.isNotEmpty()) {
                         item {
-                            AnalyticsCard("Pengeluaran Harian") {
-                                DailyLineChart(uiState.dailyExpensePoints)
+                            StaggeredEntrance(index = seq++) {
+                                AnalyticsCard("Pengeluaran Harian") {
+                                    DailyLineChart(uiState.dailyExpensePoints)
+                                }
                             }
                         }
                     }
                     if (uiState.categorySlices.isNotEmpty()) {
                         item {
-                            AnalyticsCard("Pengeluaran per Kategori") {
-                                DonutChartWithLegend(uiState.categorySlices)
+                            StaggeredEntrance(index = seq++) {
+                                AnalyticsCard("Pengeluaran per Kategori") {
+                                    DonutChartWithLegend(uiState.categorySlices)
+                                }
                             }
                         }
                     }
                     if (uiState.monthlyBarEntries.isNotEmpty()) {
                         item {
-                            AnalyticsCard("Pemasukan vs Pengeluaran (${uiState.selectedPeriod.label})") {
-                                MonthlyBarChart(uiState.monthlyBarEntries)
+                            StaggeredEntrance(index = seq++) {
+                                AnalyticsCard("Pemasukan vs Pengeluaran (${uiState.selectedPeriod.label})") {
+                                    MonthlyBarChart(uiState.monthlyBarEntries)
+                                }
                             }
                         }
                     }
@@ -297,6 +340,38 @@ fun DashboardScreen(
 }
 
 // ── Komponen UI ───────────────────────────────────────────────────────────────
+
+@Composable
+private fun DashboardLoadingSkeleton(modifier: Modifier = Modifier) {
+    Column(
+        modifier            = modifier.fillMaxSize().padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(150.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .shimmerEffect()
+        )
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(56.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .shimmerEffect()
+        )
+        repeat(3) {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(72.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .shimmerEffect()
+            )
+        }
+    }
+}
 
 @Composable
 private fun AnalyticsMiniCard(modifier: Modifier, label: String, value: String, color: Color) {
@@ -328,8 +403,53 @@ private fun AnalyticsCard(title: String, content: @Composable () -> Unit) {
 }
 
 @Composable
+private fun MaiInsightCard(insight: String) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors   = CardDefaults.cardColors(containerColor = MaiPurple.copy(alpha = 0.08f)),
+        border   = androidx.compose.foundation.BorderStroke(1.dp, MaiPurple.copy(alpha = 0.2f))
+    ) {
+        Row(
+            modifier              = Modifier.padding(14.dp),
+            verticalAlignment     = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            // Mini Mai avatar
+            Box(
+                modifier = Modifier
+                    .size(32.dp)
+                    .clip(CircleShape)
+                    .background(
+                        Brush.linearGradient(listOf(MaiPurple, MaiPurpleDk))
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("舞", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+            }
+            Text(
+                text  = insight,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f)
+            )
+        }
+    }
+}
+
+@Composable
 private fun BalanceSummaryCard(totalBalance: Long, monthlyIncome: Long, monthlyExpense: Long) {
     val fmt = NumberFormat.getNumberInstance(Locale("id", "ID"))
+
+    // Animasi count-up saldo: progress 0..1 murni untuk timing (aman di Float),
+    // nilai yang ditampilkan dihitung lewat Double supaya presisi rupiah besar
+    // tidak hilang, dan pas progress=1 hasilnya persis totalBalance (Long asli).
+    val progress = remember { Animatable(0f) }
+    LaunchedEffect(totalBalance) {
+        progress.snapTo(0f)
+        progress.animateTo(1f, animationSpec = tween(650, easing = FastOutSlowInEasing))
+    }
+    val displayedBalance = (progress.value.toDouble() * totalBalance).roundToLong()
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors   = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
@@ -341,7 +461,7 @@ private fun BalanceSummaryCard(totalBalance: Long, monthlyIncome: Long, monthlyE
                 color = MaterialTheme.colorScheme.onPrimaryContainer
             )
             Text(
-                "Rp ${fmt.format(totalBalance)}",
+                "Rp ${fmt.format(displayedBalance)}",
                 style      = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
                 color      = MaterialTheme.colorScheme.onPrimaryContainer

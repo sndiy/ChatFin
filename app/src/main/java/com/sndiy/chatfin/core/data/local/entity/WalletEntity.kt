@@ -2,7 +2,9 @@ package com.sndiy.chatfin.core.data.local.entity
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
+import kotlinx.serialization.Serializable
 
+@Serializable
 @Entity(tableName = "wallets")
 data class WalletEntity(
     @PrimaryKey val id: String,

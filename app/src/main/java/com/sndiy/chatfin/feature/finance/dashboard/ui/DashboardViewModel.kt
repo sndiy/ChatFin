@@ -11,6 +11,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.sndiy.chatfin.core.data.local.entity.WalletEntity
 import com.sndiy.chatfin.core.data.sync.SyncEventBus
+import com.sndiy.chatfin.core.domain.LocalInsightEngine
+import com.sndiy.chatfin.core.domain.PeriodRange
 import com.sndiy.chatfin.feature.finance.account.data.repository.AccountRepository
 import com.sndiy.chatfin.feature.finance.analytics.ui.AnalyticsPeriod
 import com.sndiy.chatfin.feature.finance.analytics.ui.CategorySlice
@@ -28,6 +30,7 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
+import kotlin.random.Random
 import javax.inject.Inject
 
 data class TransactionDisplay(
@@ -58,9 +61,11 @@ data class DashboardUiState(
     val dailyExpensePoints: List<DailyExpensePoint>  = emptyList(),
     val categorySlices: List<CategorySlice>          = emptyList(),
     val monthlyBarEntries: List<MonthlyBarEntry>     = emptyList(),
-    // BARU: Budget overview
+    // Budget overview
     val budgetOverview: List<BudgetWithSpent>        = emptyList(),
-    val hasBudgets: Boolean                          = false
+    val hasBudgets: Boolean                          = false,
+    // Mai's daily insight
+    val maiInsight: String                           = ""
 )
 
 @HiltViewModel
@@ -171,12 +176,16 @@ class DashboardViewModel @Inject constructor(
                     )
                 }.sortedByDescending { it.percentage }.take(3)
 
+                val totalBal = raw.wallets.sumOf { w -> w.balance }
+                val insight  = LocalInsightEngine.spendingInsight(totalBal, raw.income, raw.expense)
+
                 _uiState.update {
                     it.copy(
                         isLoading          = false,
-                        totalBalance       = raw.wallets.sumOf { w -> w.balance },
+                        totalBalance       = totalBal,
                         monthlyIncome      = raw.income,
                         monthlyExpense     = raw.expense,
+                        maiInsight         = insight,
                         wallets            = raw.wallets,
                         recentTransactions = recent,
                         budgetOverview     = budgetOverview,
@@ -216,7 +225,11 @@ class DashboardViewModel @Inject constructor(
                 val catMap  = expCats.associate { it.id to it.name }
 
                 val dailyPoints = raw.daily.map { d ->
-                    val dayNum = d.date.substring(8, 10).trimStart('0').ifEmpty { "0" }
+                    // d.date bisa berasal dari sync Firestore — jangan andalkan
+                    // posisi karakter mentah (substring) untuk data yang formatnya
+                    // bisa saja rusak. Parse via LocalDate, fallback ke "?" kalau gagal.
+                    val dayNum = runCatching { LocalDate.parse(d.date).dayOfMonth.toString() }
+                        .getOrDefault("?")
                     DailyExpensePoint(date = d.date, dayLabel = dayNum, amount = d.total)
                 }
 
@@ -273,17 +286,11 @@ class DashboardViewModel @Inject constructor(
         }
     }
 
-    private fun periodRange(period: AnalyticsPeriod): Pair<LocalDate, LocalDate> {
-        val today = LocalDate.now()
-        return when (period) {
-            AnalyticsPeriod.THIS_MONTH    -> today.withDayOfMonth(1) to today
-            AnalyticsPeriod.LAST_MONTH    -> {
-                val start = today.minusMonths(1).withDayOfMonth(1)
-                start to start.plusMonths(1).minusDays(1)
-            }
-            AnalyticsPeriod.LAST_3_MONTHS -> today.minusMonths(3).withDayOfMonth(1) to today
-            AnalyticsPeriod.LAST_6_MONTHS -> today.minusMonths(6).withDayOfMonth(1) to today
-        }
+    private fun periodRange(period: AnalyticsPeriod): Pair<LocalDate, LocalDate> = when (period) {
+        AnalyticsPeriod.THIS_MONTH    -> PeriodRange.thisMonth()
+        AnalyticsPeriod.LAST_MONTH    -> PeriodRange.lastMonth()
+        AnalyticsPeriod.LAST_3_MONTHS -> PeriodRange.lastNMonths(3)
+        AnalyticsPeriod.LAST_6_MONTHS -> PeriodRange.lastNMonths(6)
     }
 
     fun setupInitialData(accountName: String) {

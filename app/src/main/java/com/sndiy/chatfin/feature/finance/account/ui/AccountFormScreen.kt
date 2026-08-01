@@ -2,9 +2,11 @@
 
 package com.sndiy.chatfin.feature.finance.account.ui
 
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -25,6 +27,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.sndiy.chatfin.core.ui.animation.pressScale
 import com.sndiy.chatfin.core.ui.theme.AccountColors
 import com.sndiy.chatfin.core.ui.theme.ChatFinSpacing
 
@@ -165,9 +168,7 @@ private fun AccountPreviewCard(name: String, colorHex: String) {
 
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors   = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
-        )
+        colors   = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
     ) {
         Row(
             modifier         = Modifier.padding(ChatFinSpacing.md),
@@ -221,10 +222,12 @@ private fun ColorPicker(
             }.getOrElse { Color.Gray }
 
             val isSelected = hex == selectedColorHex
+            val interactionSource = remember { MutableInteractionSource() }
 
             Box(
                 modifier = Modifier
                     .size(40.dp)
+                    .pressScale(interactionSource)
                     .clip(CircleShape)
                     .background(color)
                     .then(
@@ -234,7 +237,10 @@ private fun ColorPicker(
                             shape = CircleShape
                         ) else Modifier
                     )
-                    .clickable { onColorSelected(hex) },
+                    .clickable(
+                        interactionSource = interactionSource,
+                        indication         = LocalIndication.current
+                    ) { onColorSelected(hex) },
                 contentAlignment = Alignment.Center
             ) {
                 if (isSelected) {

@@ -69,9 +69,9 @@ class AccountRepository @Inject constructor(
 
     suspend fun switchActiveAccount(accountId: String) {
         accountDao.switchActiveAccount(accountId)
-        secureStorage.activeAccountId = accountId
+        secureStorage.setActiveAccountId(accountId)
     }
 
-    fun getSavedActiveAccountId(): String? =
-        secureStorage.activeAccountId
+    suspend fun getSavedActiveAccountId(): String? =
+        secureStorage.getActiveAccountId()
 }

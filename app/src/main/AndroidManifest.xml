@@ -1,21 +1,33 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Permissions -->
-    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
-    <uses-permission android:name="android.permission.USE_FINGERPRINT" />
+    <!--
+      Permissions.
+      Hanya minta yang benar-benar dipakai kode. USE_BIOMETRIC, USE_FINGERPRINT,
+      READ_MEDIA_IMAGES, dan READ_EXTERNAL_STORAGE dihapus di M0 karena tidak ada
+      satu pun kode yang menggunakannya — aplikasi keuangan yang meminta akses
+      sidik jari dan galeri tanpa alasan merusak kepercayaan di halaman install.
+      Kalau nanti fitur biometrik / foto struk benar-benar dibuat, tambahkan lagi
+      bersama implementasinya.
+    -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
-    <!-- Untuk Android < 13 -->
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
-        android:maxSdkVersion="32" />
 
+    <!--
+      allowBackup="false" — disengaja.
+      Auto Backup meng-upload chatfin_database (seluruh data keuangan, plaintext)
+      ke Google Drive, DAN meng-upload shared_prefs/chatfin_secure. Master key
+      EncryptedSharedPreferences ada di Android Keystore dan tidak ikut ter-backup,
+      jadi setelah restore ke device baru file itu tidak bisa didekripsi →
+      SecureStorage melempar exception → crash di setiap launch.
+      Backup manual (JSON) sudah tersedia di Setelan → Sinkronisasi & Backup.
+      dataExtractionRules tetap dipasang karena device-to-device transfer di
+      Android 12+ TIDAK dimatikan oleh allowBackup=false.
+    -->
     <application
         android:name=".ChatFinApp"
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
-        android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"

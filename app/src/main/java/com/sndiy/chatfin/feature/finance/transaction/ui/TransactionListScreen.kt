@@ -1,9 +1,12 @@
 package com.sndiy.chatfin.feature.finance.transaction.ui
 
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -26,6 +29,8 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import com.sndiy.chatfin.core.data.local.entity.CategoryEntity
 import com.sndiy.chatfin.core.data.local.entity.TransactionEntity
+import com.sndiy.chatfin.core.ui.animation.StaggeredEntrance
+import com.sndiy.chatfin.core.ui.animation.pressScale
 import com.sndiy.chatfin.core.ui.theme.ExpenseRed
 import com.sndiy.chatfin.core.ui.theme.IncomeGreen
 import java.text.NumberFormat
@@ -141,6 +146,12 @@ fun TransactionListScreen(
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
+        if (listState.isLoading && listState.transactions.isEmpty()) {
+            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
+            return@Scaffold
+        }
         LazyColumn(
             modifier            = Modifier.fillMaxSize().padding(padding),
             contentPadding      = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
@@ -256,6 +267,7 @@ fun TransactionListScreen(
                 }
 
                 val grouped = visibleTx.groupBy { it.date }
+                var staggerIdx = 0
                 grouped.forEach { (date, txList) ->
                     item(key = "header_$date") {
                         Text(
@@ -266,18 +278,21 @@ fun TransactionListScreen(
                             modifier   = Modifier.padding(top = 8.dp, bottom = 2.dp)
                         )
                     }
-                    items(txList, key = { it.id }) { transaction ->
+                    itemsIndexed(txList, key = { _, it -> it.id }) { i, transaction ->
                         val category = allCategories.find { it.id == transaction.categoryId }
                         val wallet   = listState.wallets.find { it.id == transaction.walletId }
-                        TransactionItem(
-                            transaction  = transaction,
-                            category     = category,
-                            walletName   = wallet?.name ?: "-",
-                            searchQuery  = searchQuery,
-                            onEdit       = { viewModel.loadForEdit(transaction); showEditSheet = true },
-                            onDelete     = { transactionToDelete = transaction }
-                        )
+                        StaggeredEntrance(index = staggerIdx + i) {
+                            TransactionItem(
+                                transaction  = transaction,
+                                category     = category,
+                                walletName   = wallet?.name ?: "-",
+                                searchQuery  = searchQuery,
+                                onEdit       = { viewModel.loadForEdit(transaction); showEditSheet = true },
+                                onDelete     = { transactionToDelete = transaction }
+                            )
+                        }
                     }
+                    staggerIdx += txList.size
                 }
 
                 if (hasMore) {
@@ -434,9 +449,11 @@ private fun DateFilterDialog(
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
 
                 // Tanggal mulai
+                val startInteraction = remember { MutableInteractionSource() }
                 OutlinedCard(
-                    onClick = { showStartPicker = true },
-                    modifier = Modifier.fillMaxWidth()
+                    onClick           = { showStartPicker = true },
+                    interactionSource = startInteraction,
+                    modifier          = Modifier.fillMaxWidth().pressScale(startInteraction)
                 ) {
                     Row(
                         modifier              = Modifier.padding(12.dp).fillMaxWidth(),
@@ -460,9 +477,11 @@ private fun DateFilterDialog(
                 }
 
                 // Tanggal akhir
+                val endInteraction = remember { MutableInteractionSource() }
                 OutlinedCard(
-                    onClick = { showEndPicker = true },
-                    modifier = Modifier.fillMaxWidth()
+                    onClick           = { showEndPicker = true },
+                    interactionSource = endInteraction,
+                    modifier          = Modifier.fillMaxWidth().pressScale(endInteraction)
                 ) {
                     Row(
                         modifier              = Modifier.padding(12.dp).fillMaxWidth(),

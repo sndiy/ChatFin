@@ -1,10 +1,12 @@
 package com.sndiy.chatfin.feature.finance.account.ui
 
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -20,6 +22,8 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.sndiy.chatfin.core.data.local.entity.FinanceAccountEntity
+import com.sndiy.chatfin.core.ui.animation.StaggeredEntrance
+import com.sndiy.chatfin.core.ui.animation.pressScale
 import com.sndiy.chatfin.core.ui.theme.ChatFinSpacing
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -63,7 +67,11 @@ fun AccountListScreen(
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { paddingValues ->
-        if (uiState.accounts.isEmpty()) {
+        if (uiState.isLoading && uiState.accounts.isEmpty()) {
+            Box(Modifier.padding(paddingValues).fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
+        } else if (uiState.accounts.isEmpty()) {
             EmptyAccountState(
                 modifier     = Modifier.padding(paddingValues),
                 onAddAccount = onNavigateToAddAccount
@@ -74,14 +82,16 @@ fun AccountListScreen(
                 contentPadding      = PaddingValues(ChatFinSpacing.md),
                 verticalArrangement = Arrangement.spacedBy(ChatFinSpacing.sm)
             ) {
-                items(uiState.accounts, key = { it.id }) { account ->
-                    AccountListItem(
-                        account     = account,
-                        isActive    = account.id == uiState.activeAccount?.id,
-                        onSetActive = { viewModel.switchAccount(account.id) },
-                        onEdit      = { onNavigateToEditAccount(account.id) },
-                        onDelete    = { accountToDelete = account }
-                    )
+                itemsIndexed(uiState.accounts, key = { _, it -> it.id }) { idx, account ->
+                    StaggeredEntrance(index = idx) {
+                        AccountListItem(
+                            account     = account,
+                            isActive    = account.id == uiState.activeAccount?.id,
+                            onSetActive = { viewModel.switchAccount(account.id) },
+                            onEdit      = { onNavigateToEditAccount(account.id) },
+                            onDelete    = { accountToDelete = account }
+                        )
+                    }
                 }
             }
         }
@@ -117,11 +127,16 @@ private fun AccountListItem(
     }.getOrElse { Color.Gray }
 
     var showMenu by remember { mutableStateOf(false) }
+    val interactionSource = remember { MutableInteractionSource() }
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onSetActive),
+            .clickable(
+                interactionSource = interactionSource,
+                indication         = LocalIndication.current,
+                onClick            = onSetActive
+            ),
         colors = CardDefaults.cardColors(
             containerColor = if (isActive)
                 MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)

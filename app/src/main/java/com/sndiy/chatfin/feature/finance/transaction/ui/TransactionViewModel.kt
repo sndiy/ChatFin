@@ -16,6 +16,7 @@ import com.sndiy.chatfin.feature.finance.transaction.data.repository.CategoryRep
 import com.sndiy.chatfin.feature.finance.transaction.data.repository.TransactionRepository
 import com.sndiy.chatfin.feature.finance.transaction.data.repository.WalletRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.time.LocalDate
@@ -36,8 +37,6 @@ data class TransactionFormState(
     val note: String                      = "",
     val date: LocalDate                   = LocalDate.now(),
     val time: LocalTime                   = LocalTime.now(),
-    val isRecurring: Boolean              = false,
-    val recurringInterval: String?        = null,
     val amountError: String?              = null,
     val categoryError: String?            = null,
     val walletError: String?              = null,
@@ -67,11 +66,12 @@ data class TransactionListUiState(
     val expenseCategories: List<CategoryEntity> = emptyList(),
     val incomeCategories: List<CategoryEntity>  = emptyList(),
     val dateFilter: DateFilter                  = DateFilter(),
-    val isLoading: Boolean                      = false,
+    val isLoading: Boolean                      = true,
     val errorMessage: String?                   = null,
     val successMessage: String?                 = null
 )
 
+@OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class TransactionViewModel @Inject constructor(
     private val transactionRepo: TransactionRepository,
@@ -88,46 +88,44 @@ class TransactionViewModel @Inject constructor(
 
     private var activeAccountId: String? = null
 
-    init { observeActiveAccount() }
-
-    private fun observeActiveAccount() {
+    init {
         viewModelScope.launch {
-            accountRepo.getActiveAccount().collect { account ->
-                account?.let {
-                    activeAccountId = it.id
-                    loadData(it.id)
+            accountRepo.getActiveAccount()
+                .filterNotNull()
+                .flatMapLatest { account ->
+                    activeAccountId = account.id
+                    _listState.update { it.copy(isLoading = true) }
+                    combine(
+                        transactionRepo.getTransactionsByAccount(account.id),
+                        walletRepo.getWalletsByAccount(account.id),
+                        categoryRepo.getCategoriesByAccountAndType(account.id, "EXPENSE"),
+                        categoryRepo.getCategoriesByAccountAndType(account.id, "INCOME")
+                    ) { transactions, wallets, expCats, incCats ->
+                        transactions to Triple(wallets, expCats, incCats)
+                    }
                 }
-            }
-        }
-    }
-
-    private fun loadData(accountId: String) {
-        viewModelScope.launch {
-            combine(
-                transactionRepo.getTransactionsByAccount(accountId),
-                walletRepo.getWalletsByAccount(accountId),
-                categoryRepo.getCategoriesByAccountAndType(accountId, "EXPENSE"),
-                categoryRepo.getCategoriesByAccountAndType(accountId, "INCOME")
-            ) { transactions, wallets, expCats, incCats ->
-                _listState.value.copy(
-                    transactions      = transactions,
-                    wallets           = wallets,
-                    expenseCategories = expCats,
-                    incomeCategories  = incCats
-                )
-            }.collect { _listState.value = it }
+                .collect { (transactions, rest) ->
+                    val (wallets, expCats, incCats) = rest
+                    _listState.update {
+                        it.copy(
+                            transactions      = transactions,
+                            wallets           = wallets,
+                            expenseCategories = expCats,
+                            incomeCategories  = incCats,
+                            isLoading         = false
+                        )
+                    }
+                }
         }
     }
 
     // ── Filter tanggal ────────────────────────────────────────────────────────
     fun setDateFilter(startDate: LocalDate?, endDate: LocalDate?) {
-        _listState.value = _listState.value.copy(
-            dateFilter = DateFilter(startDate = startDate, endDate = endDate)
-        )
+        _listState.update { it.copy(dateFilter = DateFilter(startDate = startDate, endDate = endDate)) }
     }
 
     fun clearDateFilter() {
-        _listState.value = _listState.value.copy(dateFilter = DateFilter())
+        _listState.update { it.copy(dateFilter = DateFilter()) }
     }
 
     // ── Load transaksi untuk diedit ───────────────────────────────────────────
@@ -142,73 +140,64 @@ class TransactionViewModel @Inject constructor(
             "TRANSFER" -> TransactionType.TRANSFER
             else       -> TransactionType.EXPENSE
         }
-        _formState.value = TransactionFormState(
-            editingId        = transaction.id,
-            type             = type,
-            amount           = transaction.amount.toString(),
-            selectedCategory = category,
-            selectedWallet   = wallet,
-            selectedToWallet = toWallet,
-            note             = transaction.note ?: "",
-            date             = LocalDate.parse(transaction.date),
-            time             = LocalTime.parse(transaction.time),
-            isRecurring      = transaction.isRecurring,
-            recurringInterval = transaction.recurringInterval
-        )
+        // date/time bisa datang dari sumber tak terpercaya (sync Firestore, backup
+        // JSON yang diedit manual) — jangan biarkan format rusak meng-crash form Edit.
+        val safeDate = runCatching { LocalDate.parse(transaction.date) }.getOrDefault(LocalDate.now())
+        val safeTime = runCatching { LocalTime.parse(transaction.time) }.getOrDefault(LocalTime.now())
+
+        _formState.update {
+            TransactionFormState(
+                editingId        = transaction.id,
+                type             = type,
+                amount           = transaction.amount.toString(),
+                selectedCategory = category,
+                selectedWallet   = wallet,
+                selectedToWallet = toWallet,
+                note             = transaction.note ?: "",
+                date             = safeDate,
+                time             = safeTime
+            )
+        }
     }
 
     fun onTypeChange(type: TransactionType) {
-        _formState.value = _formState.value.copy(
-            type             = type,
-            selectedCategory = null,
-            categoryError    = null
-        )
+        _formState.update {
+            it.copy(type = type, selectedCategory = null, categoryError = null)
+        }
     }
 
     fun onAmountChange(value: String) {
-        _formState.value = _formState.value.copy(
-            amount      = value.filter { it.isDigit() },
-            amountError = null
-        )
+        _formState.update {
+            it.copy(amount = value.filter { c -> c.isDigit() }, amountError = null)
+        }
     }
 
     fun onCategorySelect(category: CategoryEntity) {
-        _formState.value = _formState.value.copy(selectedCategory = category, categoryError = null)
+        _formState.update { it.copy(selectedCategory = category, categoryError = null) }
     }
 
     fun onWalletSelect(wallet: WalletEntity) {
-        _formState.value = _formState.value.copy(selectedWallet = wallet, walletError = null)
+        _formState.update { it.copy(selectedWallet = wallet, walletError = null) }
     }
 
     fun onToWalletSelect(wallet: WalletEntity) {
-        _formState.value = _formState.value.copy(selectedToWallet = wallet)
+        _formState.update { it.copy(selectedToWallet = wallet) }
     }
 
     fun onNoteChange(value: String) {
-        _formState.value = _formState.value.copy(note = value)
+        _formState.update { it.copy(note = value) }
     }
 
     fun onDateChange(date: LocalDate) {
-        _formState.value = _formState.value.copy(date = date)
+        _formState.update { it.copy(date = date) }
     }
 
     fun onTimeChange(time: LocalTime) {
-        _formState.value = _formState.value.copy(time = time)
-    }
-
-    fun onRecurringChange(isRecurring: Boolean) {
-        _formState.value = _formState.value.copy(
-            isRecurring       = isRecurring,
-            recurringInterval = if (isRecurring) "MONTHLY" else null
-        )
-    }
-
-    fun onRecurringIntervalChange(interval: String) {
-        _formState.value = _formState.value.copy(recurringInterval = interval)
+        _formState.update { it.copy(time = time) }
     }
 
     fun resetForm() {
-        _formState.value = TransactionFormState()
+        _formState.update { TransactionFormState() }
     }
 
     // ── UPDATED: saveTransaction — proper edit via updateTransaction ──────────
@@ -218,20 +207,20 @@ class TransactionViewModel @Inject constructor(
         var hasError  = false
 
         if (form.amount.isBlank() || form.amount.toLongOrNull() == null || form.amount.toLong() <= 0) {
-            _formState.value = _formState.value.copy(amountError = "Nominal tidak valid")
+            _formState.update { it.copy(amountError = "Nominal tidak valid") }
             hasError = true
         }
         if (form.type != TransactionType.TRANSFER && form.selectedCategory == null) {
-            _formState.value = _formState.value.copy(categoryError = "Pilih kategori")
+            _formState.update { it.copy(categoryError = "Pilih kategori") }
             hasError = true
         }
         if (form.selectedWallet == null) {
-            _formState.value = _formState.value.copy(walletError = "Pilih dompet")
+            _formState.update { it.copy(walletError = "Pilih dompet") }
             hasError = true
         }
         if (hasError) return
 
-        _formState.value = _formState.value.copy(isLoading = true)
+        _formState.update { it.copy(isLoading = true) }
         viewModelScope.launch {
             try {
                 if (form.editingId != null) {
@@ -250,8 +239,8 @@ class TransactionViewModel @Inject constructor(
                             newTime        = form.time
                         )
                     }
-                    _formState.value = _formState.value.copy(isLoading = false, isSaved = true)
-                    _listState.value = _listState.value.copy(successMessage = "Transaksi diperbarui")
+                    _formState.update { it.copy(isLoading = false, isSaved = true) }
+                    _listState.update { it.copy(successMessage = "Transaksi diperbarui") }
                 } else {
                     // ── MODE ADD: seperti biasa ──
                     transactionRepo.addTransaction(
@@ -263,16 +252,14 @@ class TransactionViewModel @Inject constructor(
                         toWalletId        = form.selectedToWallet?.id,
                         note              = form.note.trim().ifBlank { null },
                         date              = form.date,
-                        time              = form.time,
-                        isRecurring       = form.isRecurring,
-                        recurringInterval = form.recurringInterval
+                        time              = form.time
                     )
-                    _formState.value = _formState.value.copy(isLoading = false, isSaved = true)
-                    _listState.value = _listState.value.copy(successMessage = "Transaksi disimpan")
+                    _formState.update { it.copy(isLoading = false, isSaved = true) }
+                    _listState.update { it.copy(successMessage = "Transaksi disimpan") }
                 }
             } catch (e: Exception) {
-                _formState.value = _formState.value.copy(isLoading = false)
-                _listState.value = _listState.value.copy(errorMessage = "Gagal menyimpan: ${e.message}")
+                _formState.update { it.copy(isLoading = false) }
+                _listState.update { it.copy(errorMessage = "Gagal menyimpan: ${e.message}") }
             }
         }
     }
@@ -281,9 +268,9 @@ class TransactionViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 transactionRepo.deleteTransaction(transaction)
-                _listState.value = _listState.value.copy(successMessage = "Transaksi dihapus")
+                _listState.update { it.copy(successMessage = "Transaksi dihapus") }
             } catch (e: Exception) {
-                _listState.value = _listState.value.copy(errorMessage = "Gagal menghapus: ${e.message}")
+                _listState.update { it.copy(errorMessage = "Gagal menghapus: ${e.message}") }
             }
         }
     }
@@ -292,14 +279,13 @@ class TransactionViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 walletRepo.deleteWallet(wallet)
-                _listState.value = _listState.value.copy(successMessage = "Dompet dihapus")
+                _listState.update { it.copy(successMessage = "Dompet dihapus") }
             } catch (e: Exception) {
-                _listState.value = _listState.value.copy(errorMessage = "Gagal menghapus dompet: ${e.message}")
+                _listState.update { it.copy(errorMessage = "Gagal menghapus dompet: ${e.message}") }
             }
         }
     }
 
-    
     // -- QuickAdd: simpan transaksi cepat dari bottom sheet --
     fun quickAdd(
         type: String,
@@ -319,18 +305,14 @@ class TransactionViewModel @Inject constructor(
                     walletId   = walletId,
                     note       = note.ifBlank { null }
                 )
-                _listState.value = _listState.value.copy(
-                    successMessage = "Transaksi disimpan"
-                )
+                _listState.update { it.copy(successMessage = "Transaksi disimpan") }
             } catch (e: Exception) {
-                _listState.value = _listState.value.copy(
-                    errorMessage = "Gagal menyimpan: ${e.message}"
-                )
+                _listState.update { it.copy(errorMessage = "Gagal menyimpan: ${e.message}") }
             }
         }
     }
 
     fun clearMessages() {
-        _listState.value = _listState.value.copy(errorMessage = null, successMessage = null)
+        _listState.update { it.copy(errorMessage = null, successMessage = null) }
     }
 }
