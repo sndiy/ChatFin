@@ -97,10 +97,10 @@ fun DataBackupScreen(
                 actions = {
                     if (isLoggedIn) {
                         IconButton(
-                            onClick  = { authViewModel.syncDownload() },
+                            onClick  = { authViewModel.syncSmart() },
                             enabled  = !isSyncing
                         ) {
-                            Icon(Icons.Default.Refresh, "Refresh dari cloud")
+                            Icon(Icons.Default.Sync, "Sinkronkan dua arah")
                         }
                     }
                 }
@@ -235,6 +235,19 @@ fun DataBackupScreen(
 
             HorizontalDivider()
 
+            // ── Section: Auto Backup (WhatsApp Style) ────────────────────────
+            SectionHeader("Pencadangan Otomatis")
+
+            AutoBackupCard(
+                frequency = backupState.autoBackupFrequency,
+                lastBackupTimestamp = backupState.lastBackupTimestamp,
+                isLoading = backupState.isLoading || isSyncing,
+                onFrequencySelected = { backupViewModel.setAutoBackupFrequency(it) },
+                onBackupNow = { backupViewModel.runManualBackupNow() }
+            )
+
+            HorizontalDivider()
+
             // ── Section: Backup Lokal ─────────────────────────────────────────
             SectionHeader("Backup Lokal (File JSON)")
 
@@ -318,6 +331,112 @@ fun DataBackupScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showLogoutDialog = false }) { Text("Batal") }
+            }
+        )
+    }
+}
+
+@Composable
+private fun AutoBackupCard(
+    frequency: AutoBackupFrequency,
+    lastBackupTimestamp: Long,
+    isLoading: Boolean,
+    onFrequencySelected: (AutoBackupFrequency) -> Unit,
+    onBackupNow: () -> Unit
+) {
+    var showFrequencyDialog by remember { mutableStateOf(false) }
+
+    val lastBackupText = if (lastBackupTimestamp > 0L) {
+        val dt = java.time.LocalDateTime.ofInstant(
+            java.time.Instant.ofEpochMilli(lastBackupTimestamp),
+            java.time.ZoneId.systemDefault()
+        )
+        dt.format(java.time.format.DateTimeFormatter.ofPattern("d MMM yyyy, HH:mm"))
+    } else {
+        "Belum pernah"
+    }
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Default.Backup, null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(28.dp)
+                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Cadangkan ke Perangkat & Cloud", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "Pencadangan terakhir: $lastBackupText",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            Button(
+                onClick = onBackupNow,
+                enabled = !isLoading,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+            ) {
+                Icon(Icons.Default.CloudUpload, null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("CADANGKAN SEKARANG")
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text("Cadangkan ke Penyimpanan", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                    Text("Frekuensi: ${frequency.label}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                TextButton(onClick = { showFrequencyDialog = true }) {
+                    Text("Ubah")
+                }
+            }
+        }
+    }
+
+    if (showFrequencyDialog) {
+        AlertDialog(
+            onDismissRequest = { showFrequencyDialog = false },
+            title = { Text("Frekuensi Pencadangan") },
+            text = {
+                Column {
+                    AutoBackupFrequency.entries.forEach { item ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = (item == frequency),
+                                onClick = {
+                                    onFrequencySelected(item)
+                                    showFrequencyDialog = false
+                                }
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(item.label, style = MaterialTheme.typography.bodyLarge)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showFrequencyDialog = false }) { Text("Tutup") }
             }
         )
     }

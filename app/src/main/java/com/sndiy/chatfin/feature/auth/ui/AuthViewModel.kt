@@ -140,6 +140,28 @@ class AuthViewModel @Inject constructor(
         _uiState.update { it.copy(currentUser = null, authState = AuthState.Idle) }
     }
 
+    // ── Manual sync: Smart Bi-directional Sync (Upload + Merge Download) ─────
+    fun syncSmart() {
+        val uid = authRepo.currentUser?.uid ?: return
+        _uiState.update { it.copy(syncState = SyncState.Syncing) }
+        viewModelScope.launch {
+            // Step 1: Upload data lokal baru ke cloud
+            val uploadRes = syncRepo.uploadAll(uid)
+            // Step 2: Merge data cloud ke lokal
+            val downloadRes = syncRepo.mergeDownload(uid)
+
+            if (uploadRes.isSuccess || downloadRes.isSuccess) {
+                val stats = downloadRes.getOrNull() ?: uploadRes.getOrNull() ?: SyncStats(0, 0, 0, 0)
+                _uiState.update { it.copy(syncState = SyncState.Done(stats)) }
+                refreshActiveAccount()
+                syncEventBus.notifySyncCompleted()
+            } else {
+                val errorMsg = downloadRes.exceptionOrNull()?.message ?: uploadRes.exceptionOrNull()?.message ?: "Sinkronisasi gagal"
+                _uiState.update { it.copy(syncState = SyncState.Error(errorMsg)) }
+            }
+        }
+    }
+
     // ── Manual sync: Upload lokal → cloud ────────────────────────────────────
     fun syncUpload() {
         val uid = authRepo.currentUser?.uid ?: return

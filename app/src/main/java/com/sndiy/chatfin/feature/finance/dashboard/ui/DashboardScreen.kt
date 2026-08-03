@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -21,6 +22,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.*
+import java.time.LocalDate
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.patrykandpatrick.vico.compose.cartesian.CartesianChartHost
@@ -537,43 +539,85 @@ private fun WalletsSection(wallets: List<WalletEntity>) {
 @Composable
 private fun TransactionItem(tx: TransactionDisplay) {
     val fmt = NumberFormat.getNumberInstance(Locale("id", "ID"))
+
+    val dateTimeText = remember(tx.date, tx.time) {
+        try {
+            val txDate = LocalDate.parse(tx.date)
+            val today = LocalDate.now()
+            val dateLabel = when {
+                txDate == today -> "Hari ini"
+                txDate == today.minusDays(1) -> "Kemarin"
+                else -> txDate.format(java.time.format.DateTimeFormatter.ofPattern("EEE, d MMM yyyy", Locale("id", "ID")))
+            }
+            if (tx.time.isNotBlank()) "$dateLabel · ${tx.time}" else dateLabel
+        } catch (e: Exception) {
+            buildString {
+                append(tx.date)
+                if (tx.time.isNotBlank()) append(" · ").append(tx.time)
+            }
+        }
+    }
+
     Card(modifier = Modifier.fillMaxWidth()) {
         Row(
-            Modifier.padding(12.dp).fillMaxWidth(),
+            Modifier.padding(14.dp).fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment     = Alignment.CenterVertically
         ) {
             Row(
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                modifier              = Modifier.weight(1f).padding(end = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment     = Alignment.CenterVertically
             ) {
-                Icon(
-                    if (tx.type == "INCOME") Icons.Default.TrendingUp else Icons.Default.TrendingDown,
-                    contentDescription = null,
-                    tint = if (tx.type == "INCOME") IncomeGreen else ExpenseRed
-                )
-                Column {
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background((if (tx.type == "INCOME") IncomeGreen else ExpenseRed).copy(alpha = 0.12f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        if (tx.type == "INCOME") Icons.Default.TrendingUp else Icons.Default.TrendingDown,
+                        contentDescription = null,
+                        tint = if (tx.type == "INCOME") IncomeGreen else ExpenseRed,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                Column(
+                    modifier            = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
                     Text(
                         text       = tx.note?.takeIf { it.isNotBlank() } ?: tx.categoryName,
-                        fontWeight = FontWeight.Medium,
+                        fontWeight = FontWeight.SemiBold,
                         style      = MaterialTheme.typography.bodyMedium,
-                        maxLines   = 1
+                        maxLines   = 1,
+                        overflow   = TextOverflow.Ellipsis,
+                        modifier   = Modifier.basicMarquee(
+                            iterations = Int.MAX_VALUE,
+                            velocity = 30.dp
+                        )
                     )
                     Text(
-                        text = buildString {
-                            append(tx.categoryName)
-                            append(" · "); append(tx.walletName)
-                            if (tx.time.isNotBlank()) { append(" · "); append(tx.time) }
-                        },
-                        style    = MaterialTheme.typography.labelSmall,
+                        text     = "${tx.categoryName} · ${tx.walletName}",
+                        style    = MaterialTheme.typography.bodySmall,
                         color    = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text     = dateTimeText,
+                        style    = MaterialTheme.typography.labelSmall,
+                        color    = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }
             Text(
                 "${if (tx.type == "INCOME") "+" else "-"}Rp ${fmt.format(tx.amount)}",
-                fontWeight = FontWeight.SemiBold,
+                fontWeight = FontWeight.Bold,
+                style      = MaterialTheme.typography.bodyLarge,
                 color      = if (tx.type == "INCOME") IncomeGreen else ExpenseRed
             )
         }
