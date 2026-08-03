@@ -41,4 +41,45 @@
     <string name="persona_custom_hint">Mode Bot (tanpa API key) tetap pakai gaya netral untuk Custom — teks ini hanya memengaruhi jawaban lewat AI.</string>
     <string name="persona_custom_save">Simpan Kepribadian</string>
     <string name="persona_custom_saved">Kepribadian custom disimpan.</string>
+
+    <!-- Menu Aksi Chat Bubble -->
+    <string name="chat_action_copy">Salin teks</string>
+    <string name="chat_action_edit">Edit</string>
+    <string name="chat_action_delete">Hapus</string>
+    <string name="chat_action_reply">Balas</string>
+    <string name="chat_copied_toast">Teks disalin ke papan klip</string>
+    <string name="chat_edit_save">Simpan</string>
+    <string name="chat_edit_cancel">Batal</string>
+    <string name="chat_replying_to">Membalas</string>
+
+    <!-- Notifikasi & Setelan Notifikasi -->
+    <string name="settings_section_notification">Notifikasi</string>
+    <string name="settings_notif_bg_task_title">Notifikasi Task Background</string>
+    <string name="settings_notif_bg_task_subtitle">Tampilkan progress notifikasi saat AI atau bot memproses tugas berat</string>
+    <string name="settings_notif_daily_reminder_title">Pengingat Harian</string>
+    <string name="settings_notif_daily_reminder_subtitle">Pengingat motivasi sore hari untuk mencatat transaksi</string>
+
+    <string name="notif_channel_bg_task_name">Task Background</string>
+    <string name="notif_channel_bg_task_desc">Notifikasi progress untuk task berat di background</string>
+    <string name="notif_channel_daily_reminder_name">Pengingat Harian</string>
+    <string name="notif_channel_daily_reminder_desc">Notifikasi pengingat motivasi harian untuk mencatat keuangan</string>
+
+    <string name="notif_daily_reminder_title">Catatan Keuangan Hari Ini</string>
+    <string name="notif_daily_reminder_msg_1">Belum ada catatan transaksi hari ini, yuk luangkan 1 menit!</string>
+    <string name="notif_daily_reminder_msg_2">Pencatatan kecil hari ini buat pengeluaran bulan ini lebih terkontrol.</string>
+    <string name="notif_daily_reminder_msg_3">Yuk catat pengeluaranmu sebelum lupa detailnya!</string>
+    <string name="notif_daily_reminder_msg_4">1 menit catat keuangan = 24 jam tenang tanpa kepikiran.</string>
+    <string name="notif_daily_reminder_msg_5">Sudah belanja apa saja hari ini? Mari kita rapikan catatannya.</string>
+    <string name="notif_daily_reminder_msg_6">Keuangan sehat dimulai dari kebiasaan mencatat setiap hari.</string>
+    <string name="notif_daily_reminder_msg_7">Luangkan waktu sejenak untuk update dompetmu hari ini.</string>
+    <string name="notif_daily_reminder_msg_8">Catat transaksi hari ini yuk, Sakurajima Mai siap bantu rekap!</string>
+
+    <string name="notif_bg_task_completed_title">Task Selesai</string>
+    <string name="notif_bg_task_completed_default_msg">Proses background telah berhasil diselesaikan. Tap untuk melihat.</string>
+
+    <!-- Fitur Chart & Tabel Interaktif -->
+    <string name="chart_export_success">Gambar chart berhasil disimpan!</string>
+    <string name="chart_export_failed">Gagal menyimpan gambar chart.</string>
+    <string name="chart_download_btn">Download PNG</string>
+    <string name="table_download_btn">Download PNG</string>
 </resources>

@@ -57,7 +57,9 @@ data class ChatUiState(
     val wallets: List<WalletEntity>             = emptyList(),
     val expenseCategories: List<CategoryEntity> = emptyList(),
     val incomeCategories: List<CategoryEntity>  = emptyList(),
-    val pendingTransaction: PendingTransaction? = null
+    val transactions: List<TransactionEntity>   = emptyList(),
+    val pendingTransaction: PendingTransaction? = null,
+    val replyingToMessage: UiMessage?           = null
 )
 
 data class PendingTransaction(
@@ -75,6 +77,7 @@ private data class ChatAccountData(
     val wallets: List<WalletEntity>,
     val expenseCategories: List<CategoryEntity>,
     val incomeCategories: List<CategoryEntity>,
+    val transactions: List<TransactionEntity>,
     val totalIncome: Long,
     val totalExpense: Long
 )
@@ -133,18 +136,9 @@ class ChatViewModel @Inject constructor(
         observeChatHistory()
         observeNetwork()
         observePersona()
-        // Kamus kategori (M6) dibaca sekali di sini — cache RoomKeywordSource
-        // kosong sampai refresh() ini selesai; kalau user mengirim pesan super
-        // cepat sebelum ini selesai, TransactionParser cuma degradasi ke
-        // Partial (tetap nanya kategori), bukan salah atau crash.
         viewModelScope.launch { keywordSource.refresh() }
     }
 
-    // Riwayat chat (M13): satu sesi berkelanjutan per akun, dimuat SEKALI
-    // (bukan collector Flow hidup) saat akun aktif berubah — supaya tidak
-    // rebutan dengan update optimistic in-memory dari addMessage() saat
-    // percakapan sedang berjalan. distinctUntilChanged mencegah riwayat
-    // ke-reset tiap kali syncEventBus memicu re-emit untuk akun yang sama.
     private fun observeChatHistory() {
         viewModelScope.launch {
             accountRepo.getActiveAccount()
@@ -164,8 +158,6 @@ class ChatViewModel @Inject constructor(
                     }
                     _uiState.update { it.copy(messages = persisted) }
 
-                    // Rebuild chatHistory dari pesan yang dipersist supaya AI
-                    // tidak kehilangan konteks percakapan setelah app restart.
                     chatHistory.clear()
                     persisted
                         .filter { !it.isError && it.text.isNotBlank() }
@@ -175,10 +167,6 @@ class ChatViewModel @Inject constructor(
         }
     }
 
-    // Flow DataStore langsung (M10) — ganti persona di Setelan langsung
-    // berefek ke prompt berikutnya tanpa perlu keluar-masuk layar Chat.
-    // Digabung dengan customPersonaText (M11) karena PersonaId.CUSTOM butuh
-    // dua-duanya sekaligus untuk resolve promptFragment yang benar.
     private fun observePersona() {
         viewModelScope.launch {
             combine(
@@ -194,12 +182,10 @@ class ChatViewModel @Inject constructor(
         }
     }
 
-    // ── Monitor jaringan ──────────────────────────────────────────────────────
     private fun observeNetwork() {
         viewModelScope.launch {
             _isCheckingNetwork.value = true
 
-            // Retry 3x karena network kadang belum siap saat init
             var connected = false
             repeat(3) { attempt ->
                 connected = networkMonitor.isCurrentlyConnected()
@@ -210,7 +196,6 @@ class ChatViewModel @Inject constructor(
             if (!connected) switchToOfflineMode()
             _isCheckingNetwork.value = false
 
-            // Realtime monitor
             networkMonitor.isConnected.collect { isConnected ->
                 val currentStatus = _uiState.value.connectionStatus
                 if (!isConnected && currentStatus != ConnectionStatus.NO_INTERNET) {
@@ -224,7 +209,6 @@ class ChatViewModel @Inject constructor(
                     switchToOfflineMode()
                 } else if (isConnected && currentStatus == ConnectionStatus.NO_INTERNET) {
                     hasShownOfflineMessage = false
-                    // Auto clear offline mode saat koneksi pulih
                     _uiState.update {
                         it.copy(
                             connectionStatus = ConnectionStatus.CONNECTED,
@@ -250,9 +234,6 @@ class ChatViewModel @Inject constructor(
         }
     }
 
-    // AI belum diaktifkan (belum ada API key) — bukan kegagalan, hanya belum
-    // di-setup. Degradasi ke Mode Bot alih-alih bubble error buntu, konsisten
-    // dengan prinsip utama app: jalan penuh tanpa API key (CLAUDE.md §3.4).
     private fun switchToNoApiKeyBotMode() {
         _uiState.update {
             it.copy(connectionStatus = ConnectionStatus.BOT_MODE, isBotMode = true)
@@ -264,14 +245,8 @@ class ChatViewModel @Inject constructor(
         }
     }
 
-    // ── Observe akun aktif + sync event ──────────────────────────────────────
-    // Digabung jadi satu aliran reaktif (bukan dua collector terpisah yang
-    // masing-masing memanggil loadAccountData()) supaya tidak ada collector
-    // yang menumpuk setiap kali akun berganti ATAU setiap kali sync selesai.
-    // syncEventBus.syncCompleted.onStart{emit(Unit)} memicu subscription
-    // pertama ke accountRepo.getActiveAccount() saat ViewModel dibuat; setiap
-    // sync berikutnya me-restart subscription itu (flatMapLatest otomatis
-    // membatalkan yang lama) — jadi selalu 1 collector aktif, bukan N.
+private data class Tuple4<A, B, C, D>(val a: A, val b: B, val c: C, val d: D)
+
     @OptIn(ExperimentalCoroutinesApi::class)
     private fun observeActiveAccountAndSync() {
         viewModelScope.launch {
@@ -285,14 +260,21 @@ class ChatViewModel @Inject constructor(
                     } else {
                         val now   = LocalDate.now()
                         val start = now.withDayOfMonth(1)
-                        combine(
+                        val baseFlow = combine(
                             walletRepo.getWalletsByAccount(account.id),
                             categoryRepo.getCategoriesByAccountAndType(account.id, "EXPENSE"),
                             categoryRepo.getCategoriesByAccountAndType(account.id, "INCOME"),
+                            transactionRepo.getTransactionsByAccount(account.id)
+                        ) { wallets, expCats, incCats, txs ->
+                            Tuple4(wallets, expCats, incCats, txs)
+                        }
+
+                        combine(
+                            baseFlow,
                             transactionRepo.getTotalIncome(account.id, start, now),
                             transactionRepo.getTotalExpense(account.id, start, now)
-                        ) { wallets, expCats, incCats, income, expense ->
-                            ChatAccountData(wallets, expCats, incCats, income ?: 0L, expense ?: 0L)
+                        ) { base, income, expense ->
+                            ChatAccountData(base.a, base.b, base.c, base.d, income ?: 0L, expense ?: 0L)
                         }
                     }
                 }
@@ -301,7 +283,8 @@ class ChatViewModel @Inject constructor(
                         it.copy(
                             wallets           = data.wallets,
                             expenseCategories = data.expenseCategories,
-                            incomeCategories  = data.incomeCategories
+                            incomeCategories  = data.incomeCategories,
+                            transactions      = data.transactions
                         )
                     }
                     lastTotalIncome  = data.totalIncome
@@ -374,10 +357,84 @@ class ChatViewModel @Inject constructor(
         }
     }
 
+    // ── Manajemen Aksi Pesan (Edit, Hapus, Balas) ─────────────────────────────
+    fun setReplyingMessage(message: UiMessage?) {
+        _uiState.update { it.copy(replyingToMessage = message) }
+    }
+
+    fun clearReplyingMessage() {
+        _uiState.update { it.copy(replyingToMessage = null) }
+    }
+
+    fun deleteMessage(messageId: String) {
+        _uiState.update { state ->
+            state.copy(
+                messages = state.messages.filter { it.id != messageId },
+                replyingToMessage = if (state.replyingToMessage?.id == messageId) null else state.replyingToMessage
+            )
+        }
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            chatRepo.deleteMessage(messageId)
+        }
+    }
+
+    fun editMessage(messageId: String, newText: String) {
+        val trimmed = newText.trim()
+        if (trimmed.isBlank() || _uiState.value.isTyping) return
+
+        val currentMessages = _uiState.value.messages
+        val index = currentMessages.indexOfFirst { it.id == messageId }
+        if (index == -1) return
+
+        // Hentikan pengetikan AI jika sedang berjalan
+        stopGeneration()
+
+        // Ambil pesan-pesan setelah pesan yang diedit untuk dihapus dari UI & DB
+        val messagesToDelete = currentMessages.drop(index + 1)
+        val updatedUserMsg = currentMessages[index].copy(text = trimmed)
+        val truncatedMessages = currentMessages.take(index) + updatedUserMsg
+
+        _uiState.update { state ->
+            state.copy(
+                messages = truncatedMessages,
+                pendingTransaction = null,
+                replyingToMessage = null
+            )
+        }
+
+        // Rebuild chatHistory sampai titik sebelum pesan yang diedit
+        chatHistory.clear()
+        truncatedMessages
+            .dropLast(1)
+            .filter { !it.isError && it.text.isNotBlank() }
+            .takeLast(MAX_CHAT_HISTORY)
+            .forEach { msg -> chatHistory.add(msg.role to msg.text) }
+
+        // Update DB: update pesan user & hapus pesan-pesan setelahnya
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            chatRepo.updateMessage(messageId, trimmed)
+            messagesToDelete.forEach { msg ->
+                chatRepo.deleteMessage(msg.id)
+            }
+        }
+
+        // Kirim ulang (resend) pesan yang sudah diedit ke AI / Bot Mode
+        routeMessage(trimmed)
+    }
+
     // ── Kirim pesan ───────────────────────────────────────────────────────────
     fun sendMessage() {
         val text = _uiState.value.inputText.trim()
         if (text.isBlank() || _uiState.value.isTyping) return
+
+        val replyMsg = _uiState.value.replyingToMessage
+        val formattedText = if (replyMsg != null) {
+            val replyAuthor = if (replyMsg.role == "user") "Kamu" else "Mai"
+            val quoted = replyMsg.text.take(60).replace("\n", " ")
+            " > *[Balas $replyAuthor: \"$quoted\"]*\n$text"
+        } else {
+            text
+        }
 
         // Clear pending transaction & options dari pesan sebelumnya — mencegah
         // kartu konfirmasi zombie saat user langsung kirim pesan baru.
@@ -386,8 +443,8 @@ class ChatViewModel @Inject constructor(
             clearAllOptions()
         }
 
-        addMessage(UiMessage(role = "user", text = text))
-        _uiState.update { it.copy(inputText = "") }
+        addMessage(UiMessage(role = "user", text = formattedText))
+        _uiState.update { it.copy(inputText = "", replyingToMessage = null) }
         routeMessage(text)
     }
 

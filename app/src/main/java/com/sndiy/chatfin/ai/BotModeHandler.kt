@@ -90,6 +90,20 @@ class BotModeHandler @Inject constructor() {
 
             cmd == "rangkuman" || cmd == "summary" -> BotResult("__RANGKUMAN__")
 
+            cmd == "chart" || cmd == "grafik" || cmd == "diagram" || cmd.contains("chart") || cmd.contains("grafik") || cmd.contains("visualisasi") -> {
+                BotResult(
+                    text = "Berikut visualisasi grafik keuanganmu. Kamu bisa memilih tipe chart, rentang tanggal, dan warna tema langsung lewat tombol di bawah:",
+                    option = ChatOption.VisualizationRequest(title = "Grafik Keuangan Pengeluaran")
+                )
+            }
+
+            cmd == "tabel" || cmd == "table" || cmd.contains("tabel") || cmd.contains("table") -> {
+                BotResult(
+                    text = "Berikut visualisasi tabel keuanganmu. Pilih template siap pakai atau biarkan AI mendesain formatnya lewat tombol di bawah:",
+                    option = ChatOption.TableRequest(title = "Tabel Ringkasan Keuangan")
+                )
+            }
+
             else -> BotResult(
                 "❓ Perintah tidak dikenal.\n\nKetik *help* untuk melihat daftar perintah yang tersedia."
             )

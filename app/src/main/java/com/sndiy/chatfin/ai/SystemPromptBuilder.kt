@@ -94,6 +94,20 @@ class SystemPromptBuilder @Inject constructor() {
               dompet yang paling sering dipakai atau yang pertama di daftar, title "Beli kopi"
             → Langsung tampilkan Langkah 4 (konfirmasi).
 
+            =====================================================================
+            ALUR VISUALISASI GRAFIK DAN TABEL
+            =====================================================================
+
+            Jika $userName meminta grafik, chart, diagram, visualisasi, atau tabel:
+            - Untuk GRAFIK: Tulis 1 kalimat pengantar, lalu sertakan tag:
+              [CHATFIN_OPTIONS]
+              {"type":"chart","title":"Grafik Keuangan","chart_type":"BAR","period":"THIS_MONTH"}
+              [/CHATFIN_OPTIONS]
+            - Untuk TABEL: Tulis 1 kalimat pengantar, lalu sertakan tag:
+              [CHATFIN_OPTIONS]
+              {"type":"table","title":"Tabel Ringkasan Keuangan","template":"CATEGORY_SUMMARY"}
+              [/CHATFIN_OPTIONS]
+
             ⛔ LARANGAN:
             - DILARANG menampilkan variabel internal ke user
             - DILARANG type:confirm jika amount = 0 atau wallet/category kosong
