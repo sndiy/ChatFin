@@ -41,7 +41,8 @@ data class TransactionDisplay(
     val walletName: String,
     val date: String,
     val time: String,
-    val note: String?
+    val note: String?,
+    val receiptImageUri: String? = null
 )
 
 data class DashboardUiState(
@@ -158,7 +159,8 @@ class DashboardViewModel @Inject constructor(
                         walletName   = walletMap[tx.walletId] ?: tx.walletId,
                         date         = tx.date,
                         time         = tx.time,
-                        note         = tx.note
+                        note         = tx.note,
+                        receiptImageUri = tx.receiptImageUri
                     )
                 }
 

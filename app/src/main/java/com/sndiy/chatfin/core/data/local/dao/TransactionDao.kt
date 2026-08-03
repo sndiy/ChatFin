@@ -1,9 +1,9 @@
-// app/src/main/java/com/sndiy/chatfin/core/data/local/dao/TransactionDao.kt
-
 package com.sndiy.chatfin.core.data.local.dao
 
 import androidx.room.*
 import com.sndiy.chatfin.core.data.local.entity.TransactionEntity
+import com.sndiy.chatfin.core.data.local.entity.TransactionItemEntity
+import com.sndiy.chatfin.core.data.local.entity.TransactionWithItems
 import kotlinx.coroutines.flow.Flow
 
 // Data class bantu untuk query agregasi per kategori
@@ -22,6 +22,15 @@ interface TransactionDao {
         ORDER BY date DESC, time DESC
     """)
     fun getTransactionsByAccount(accountId: String): Flow<List<TransactionEntity>>
+
+    // Ambil transaksi beserta rincian itemnya
+    @Transaction
+    @Query("""
+        SELECT * FROM transactions 
+        WHERE accountId = :accountId 
+        ORDER BY date DESC, time DESC
+    """)
+    fun getTransactionsWithItemsByAccount(accountId: String): Flow<List<TransactionWithItems>>
 
     // Ambil transaksi berdasarkan rentang tanggal (untuk filter periode)
     @Query("""
@@ -86,9 +95,18 @@ interface TransactionDao {
     @Query("SELECT * FROM transactions WHERE id = :id")
     suspend fun getTransactionById(id: String): TransactionEntity?
 
+    // Ambil satu transaksi beserta itemnya berdasarkan ID
+    @Transaction
+    @Query("SELECT * FROM transactions WHERE id = :id")
+    suspend fun getTransactionWithItemsById(id: String): TransactionWithItems?
+
     // Tambah transaksi baru
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertTransaction(transaction: TransactionEntity)
+
+    // Tambah daftar item transaksi
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertTransactionItems(items: List<TransactionItemEntity>)
 
     // Update transaksi
     @Update
@@ -97,6 +115,10 @@ interface TransactionDao {
     // Hapus transaksi berdasarkan object
     @Delete
     suspend fun deleteTransaction(transaction: TransactionEntity)
+
+    // Hapus daftar item transaksi berdasarkan transactionId
+    @Query("DELETE FROM transaction_items WHERE transactionId = :transactionId")
+    suspend fun deleteTransactionItemsByTransactionId(transactionId: String)
 
     // Hapus transaksi berdasarkan ID
     @Query("DELETE FROM transactions WHERE id = :id")

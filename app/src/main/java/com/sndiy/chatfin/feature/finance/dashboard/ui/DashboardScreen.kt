@@ -70,6 +70,7 @@ private val donutColors = listOf(
 fun DashboardScreen(
     onNavigateToChat: () -> Unit = {},
     onNavigateToBudget: () -> Unit = {},
+    onNavigateToReceiptScan: () -> Unit = {},
     viewModel: DashboardViewModel = hiltViewModel()
 ) {
     val uiState        by viewModel.uiState.collectAsStateWithLifecycle()
@@ -93,6 +94,9 @@ fun DashboardScreen(
             TopAppBar(
                 title = { Text("Beranda", fontWeight = FontWeight.Bold) },
                 actions = {
+                    IconButton(onClick = onNavigateToReceiptScan) {
+                        Icon(Icons.Default.CameraAlt, contentDescription = "Scan Struk", tint = MaterialTheme.colorScheme.primary)
+                    }
                     IconButton(onClick = onNavigateToChat) {
                         Icon(Icons.Default.AutoAwesome, contentDescription = "Tanya Mai")
                     }
@@ -539,6 +543,7 @@ private fun WalletsSection(wallets: List<WalletEntity>) {
 @Composable
 private fun TransactionItem(tx: TransactionDisplay) {
     val fmt = NumberFormat.getNumberInstance(Locale("id", "ID"))
+    val isReceipt = tx.receiptImageUri != null || tx.note?.contains("Struk", ignoreCase = true) == true
 
     val dateTimeText = remember(tx.date, tx.time) {
         try {
@@ -573,13 +578,13 @@ private fun TransactionItem(tx: TransactionDisplay) {
                     modifier = Modifier
                         .size(40.dp)
                         .clip(CircleShape)
-                        .background((if (tx.type == "INCOME") IncomeGreen else ExpenseRed).copy(alpha = 0.12f)),
+                        .background((if (tx.type == "INCOME") IncomeGreen else if (isReceipt) MaterialTheme.colorScheme.primary else ExpenseRed).copy(alpha = 0.12f)),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        if (tx.type == "INCOME") Icons.Default.TrendingUp else Icons.Default.TrendingDown,
+                        if (isReceipt) Icons.Default.ReceiptLong else if (tx.type == "INCOME") Icons.Default.TrendingUp else Icons.Default.TrendingDown,
                         contentDescription = null,
-                        tint = if (tx.type == "INCOME") IncomeGreen else ExpenseRed,
+                        tint = if (tx.type == "INCOME") IncomeGreen else if (isReceipt) MaterialTheme.colorScheme.primary else ExpenseRed,
                         modifier = Modifier.size(20.dp)
                     )
                 }
@@ -587,17 +592,47 @@ private fun TransactionItem(tx: TransactionDisplay) {
                     modifier            = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
-                    Text(
-                        text       = tx.note?.takeIf { it.isNotBlank() } ?: tx.categoryName,
-                        fontWeight = FontWeight.SemiBold,
-                        style      = MaterialTheme.typography.bodyMedium,
-                        maxLines   = 1,
-                        overflow   = TextOverflow.Ellipsis,
-                        modifier   = Modifier.basicMarquee(
-                            iterations = Int.MAX_VALUE,
-                            velocity = 30.dp
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text       = tx.note?.takeIf { it.isNotBlank() } ?: tx.categoryName,
+                            fontWeight = FontWeight.SemiBold,
+                            style      = MaterialTheme.typography.bodyMedium,
+                            maxLines   = 1,
+                            overflow   = TextOverflow.Ellipsis,
+                            modifier   = Modifier
+                                .weight(1f, fill = false)
+                                .basicMarquee(iterations = Int.MAX_VALUE, velocity = 30.dp)
                         )
-                    )
+                        if (isReceipt) {
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.8f)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(2.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.CameraAlt,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(10.dp)
+                                    )
+                                    Text(
+                                        text = "OCR Struk",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontSize = 9.sp,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+                    }
                     Text(
                         text     = "${tx.categoryName} · ${tx.walletName}",
                         style    = MaterialTheme.typography.bodySmall,

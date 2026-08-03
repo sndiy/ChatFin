@@ -8,6 +8,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -30,8 +32,20 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.sndiy.chatfin.core.data.local.entity.CategoryEntity
 import com.sndiy.chatfin.core.data.local.entity.WalletEntity
 import com.sndiy.chatfin.core.ui.animation.pressScale
+import com.sndiy.chatfin.core.ui.component.NumpadAmountDisplay
+import com.sndiy.chatfin.core.ui.component.NumpadKeyboard
+import com.sndiy.chatfin.core.ui.component.NumpadPresetChips
 import java.text.NumberFormat
+import java.time.LocalDate
+import java.time.LocalTime
+import java.time.format.DateTimeFormatter
 import java.util.Locale
+
+private val formNotePresets = listOf(
+    "Makan", "Minum", "Kopi", "Belanja", "Bensin",
+    "Parkir", "Transportasi", "Listrik", "Air", "Internet",
+    "Hiburan", "Kesehatan", "Gaji", "Bonus"
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -82,15 +96,44 @@ fun TransactionFormScreen(
                 onTypeChange = viewModel::onTypeChange
             )
 
-            // ── Input Nominal ─────────────────────────────────────────────────
-            AmountInput(
-                amount      = formState.amount,
-                type        = formState.type,
-                error       = formState.amountError,
-                onAmountChange = viewModel::onAmountChange
+            // ── Nominal Display (di-update oleh numpad di bawah) ─────────────
+            val formattedAmt = remember(formState.amount) {
+                val n = formState.amount.toLongOrNull()
+                if (n != null && n > 0) NumberFormat.getNumberInstance(Locale("id", "ID")).format(n) else formState.amount.ifBlank { "" }
+            }
+            NumpadAmountDisplay(
+                formattedAmount = formattedAmt,
+                currencyPrefix  = "Rp",
+                error           = formState.amountError,
+                modifier        = Modifier.padding(horizontal = 16.dp)
             )
 
-            Spacer(modifier = Modifier.height(8.dp))
+            // ── Preset nominal chip ───────────────────────────────────────────
+            Row(modifier = Modifier.padding(horizontal = 16.dp)) {
+                NumpadPresetChips(
+                    presets    = listOf(5_000L, 10_000L, 20_000L, 50_000L, 100_000L, 200_000L, 500_000L),
+                    currentRaw = formState.amount,
+                    onSelect   = { viewModel.onAmountChange(it.toString()) }
+                )
+            }
+
+            // ── Numpad Visual ─────────────────────────────────────────────────
+            NumpadKeyboard(
+                rawDigits   = formState.amount,
+                onDigit     = { key ->
+                    val current = formState.amount
+                    val next = (current + key).trimStart('0').take(12).ifBlank { key }
+                    viewModel.onAmountChange(next)
+                },
+                onBackspace = {
+                    if (formState.amount.isNotEmpty()) viewModel.onAmountChange(formState.amount.dropLast(1))
+                },
+                onClear     = { viewModel.onAmountChange("") },
+                buttonSize  = 68.dp,
+                modifier    = Modifier.padding(horizontal = 8.dp)
+            )
+
+            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
 
             Column(
                 modifier = Modifier.padding(horizontal = 16.dp),
@@ -136,14 +179,142 @@ fun TransactionFormScreen(
                     )
                 }
 
-                // ── Catatan ───────────────────────────────────────────────────
-                OutlinedTextField(
-                    value         = formState.note,
-                    onValueChange = viewModel::onNoteChange,
-                    label         = { Text("Catatan (opsional)") },
-                    maxLines      = 3,
-                    modifier      = Modifier.fillMaxWidth()
-                )
+                // ── Tanggal & Waktu (DatePicker & TimePicker interaktif) ───────
+                var showDatePicker by remember { mutableStateOf(false) }
+                var showTimePicker by remember { mutableStateOf(false) }
+                val formattedDate = remember(formState.date) {
+                    formState.date.format(DateTimeFormatter.ofPattern("dd MMM yyyy", Locale("id", "ID")))
+                }
+                val formattedTime = remember(formState.time) {
+                    formState.time.format(DateTimeFormatter.ofPattern("HH:mm"))
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Box(modifier = Modifier.weight(1.5f).clickable { showDatePicker = true }) {
+                        OutlinedTextField(
+                            value          = formattedDate,
+                            onValueChange  = {},
+                            readOnly       = true,
+                            enabled        = false,
+                            label          = { Text("Tanggal") },
+                            leadingIcon    = { Icon(Icons.Default.CalendarToday, null) },
+                            trailingIcon   = { Icon(Icons.Default.ArrowDropDown, null) },
+                            colors         = OutlinedTextFieldDefaults.colors(
+                                disabledTextColor        = MaterialTheme.colorScheme.onSurface,
+                                disabledBorderColor      = MaterialTheme.colorScheme.outline,
+                                disabledLabelColor       = MaterialTheme.colorScheme.onSurfaceVariant,
+                                disabledLeadingIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                disabledTrailingIconColor = MaterialTheme.colorScheme.onSurfaceVariant
+                            ),
+                            modifier       = Modifier.fillMaxWidth(),
+                            singleLine     = true
+                        )
+                    }
+                    Box(modifier = Modifier.weight(1f).clickable { showTimePicker = true }) {
+                        OutlinedTextField(
+                            value          = formattedTime,
+                            onValueChange  = {},
+                            readOnly       = true,
+                            enabled        = false,
+                            label          = { Text("Waktu") },
+                            leadingIcon    = { Icon(Icons.Default.Schedule, null) },
+                            trailingIcon   = { Icon(Icons.Default.ArrowDropDown, null) },
+                            colors         = OutlinedTextFieldDefaults.colors(
+                                disabledTextColor        = MaterialTheme.colorScheme.onSurface,
+                                disabledBorderColor      = MaterialTheme.colorScheme.outline,
+                                disabledLabelColor       = MaterialTheme.colorScheme.onSurfaceVariant,
+                                disabledLeadingIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                disabledTrailingIconColor = MaterialTheme.colorScheme.onSurfaceVariant
+                            ),
+                            modifier       = Modifier.fillMaxWidth(),
+                            singleLine     = true
+                        )
+                    }
+                }
+
+                if (showDatePicker) {
+                    val dpState = rememberDatePickerState(
+                        initialSelectedDateMillis = formState.date.toEpochDay() * 86400000L
+                    )
+                    DatePickerDialog(
+                        onDismissRequest = { showDatePicker = false },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                dpState.selectedDateMillis?.let { millis ->
+                                    viewModel.onDateChange(LocalDate.ofEpochDay(millis / 86400000L))
+                                }
+                                showDatePicker = false
+                            }) { Text("OK") }
+                        },
+                        dismissButton = { TextButton(onClick = { showDatePicker = false }) { Text("Batal") } }
+                    ) { DatePicker(state = dpState) }
+                }
+
+                if (showTimePicker) {
+                    val tpState = rememberTimePickerState(
+                        initialHour = formState.time.hour,
+                        initialMinute = formState.time.minute,
+                        is24Hour = true
+                    )
+                    AlertDialog(
+                        onDismissRequest = { showTimePicker = false },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                viewModel.onTimeChange(LocalTime.of(tpState.hour, tpState.minute))
+                                showTimePicker = false
+                            }) { Text("OK") }
+                        },
+                        dismissButton = { TextButton(onClick = { showTimePicker = false }) { Text("Batal") } },
+                        text = { TimePicker(state = tpState) }
+                    )
+                }
+
+                // ── Catatan via Chip Preset ───────────────────────────────────
+                var showCustomNoteField by remember { mutableStateOf(true) }
+                SectionLabel("Catatan (opsional)")
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    items(formNotePresets) { preset ->
+                        val isSelected = formState.note == preset && !showCustomNoteField
+                        FilterChip(
+                            selected = isSelected,
+                            onClick = {
+                                if (preset == "Lainnya") {
+                                    showCustomNoteField = true
+                                    viewModel.onNoteChange("")
+                                } else {
+                                    viewModel.onNoteChange(if (isSelected) "" else preset)
+                                    showCustomNoteField = false
+                                }
+                            },
+                            label = { Text(preset) },
+                            leadingIcon = if (isSelected) { { Icon(Icons.Default.Check, null, Modifier.size(14.dp)) } } else null
+                        )
+                    }
+                    item {
+                        FilterChip(
+                            selected = showCustomNoteField,
+                            onClick  = { showCustomNoteField = !showCustomNoteField },
+                            label    = { Text("Lainnya") },
+                            leadingIcon = if (showCustomNoteField) { { Icon(Icons.Default.Check, null, Modifier.size(14.dp)) } } else null
+                        )
+                    }
+                }
+                if (showCustomNoteField) {
+                    OutlinedTextField(
+                        value         = formState.note,
+                        onValueChange = viewModel::onNoteChange,
+                        label         = { Text("Catatan custom") },
+                        leadingIcon   = { Icon(Icons.Default.Edit, null) },
+                        trailingIcon  = if (formState.note.isNotEmpty()) {
+                            { IconButton(onClick = { viewModel.onNoteChange("") }) { Icon(Icons.Default.Clear, null) } }
+                        } else null,
+                        maxLines      = 2,
+                        modifier      = Modifier.fillMaxWidth()
+                    )
+                }
 
                 Spacer(modifier = Modifier.height(8.dp))
 
@@ -226,73 +397,7 @@ private fun TypeSelector(
     }
 }
 
-// ── Input nominal besar di tengah ─────────────────────────────────────────────
-@Composable
-private fun AmountInput(
-    amount: String,
-    type: TransactionType,
-    error: String?,
-    onAmountChange: (String) -> Unit
-) {
-    val amountColor = when (type) {
-        TransactionType.EXPENSE  -> MaterialTheme.colorScheme.error
-        TransactionType.INCOME   -> Color(0xFF1B8A4C)
-        TransactionType.TRANSFER -> MaterialTheme.colorScheme.primary
-    }
-
-    val formatted = amount.toLongOrNull()?.let {
-        NumberFormat.getNumberInstance(Locale("id", "ID")).format(it)
-    } ?: ""
-
-    Column(
-        modifier            = Modifier
-            .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surfaceVariant)
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text(
-            text  = "Rp",
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        OutlinedTextField(
-            value         = amount,
-            onValueChange = onAmountChange,
-            textStyle     = MaterialTheme.typography.displaySmall.copy(
-                textAlign  = TextAlign.Center,
-                color      = amountColor,
-                fontWeight = FontWeight.Bold
-            ),
-            placeholder   = {
-                Text(
-                    text      = "0",
-                    style     = MaterialTheme.typography.displaySmall,
-                    textAlign = TextAlign.Center,
-                    modifier  = Modifier.fillMaxWidth(),
-                    color     = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                )
-            },
-            isError       = error != null,
-            supportingText = error?.let { { Text(it, color = MaterialTheme.colorScheme.error) } },
-            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
-            ),
-            colors        = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor   = Color.Transparent,
-                unfocusedBorderColor = Color.Transparent
-            ),
-            modifier      = Modifier.fillMaxWidth()
-        )
-        if (formatted.isNotEmpty()) {
-            Text(
-                text  = "Rp $formatted",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
-}
+// AmountInput — dihapus, digantikan oleh NumpadAmountDisplay + NumpadKeyboard inline
 
 // ── Selector dompet ───────────────────────────────────────────────────────────
 @Composable

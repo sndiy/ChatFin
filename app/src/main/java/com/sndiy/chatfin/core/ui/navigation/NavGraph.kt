@@ -159,21 +159,24 @@ fun ChatFinNavGraph(
             // ── Bottom Nav tabs ───────────────────────────────────────────────
             composable(Screen.Dashboard.route) {
                 DashboardScreen(
-                    onNavigateToChat   = { navController.navigate(Screen.Chat.route) },
-                    onNavigateToBudget = { navController.navigate(Screen.BudgetList.route) }
+                    onNavigateToChat        = { navController.navigate(Screen.Chat.route) },
+                    onNavigateToBudget      = { navController.navigate(Screen.BudgetList.route) },
+                    onNavigateToReceiptScan = { navController.navigate(Screen.ReceiptScanner.route) }
                 )
             }
             composable(Screen.Chat.route)           { ChatScreen() }
             composable(Screen.Settings.route)        { SettingsScreen(navController = navController) }
             composable(Screen.TransactionList.route) {
                 TransactionListScreen(
-                    onNavigateBack  = { navController.popBackStack() },
-                    onNavigateToAdd = { navController.navigate(Screen.TransactionForm.route) }
+                    onNavigateBack          = { navController.popBackStack() },
+                    onNavigateToAdd         = { navController.navigate(Screen.TransactionForm.route) },
+                    onNavigateToReceiptScan = { navController.navigate(Screen.ReceiptScanner.route) }
                 )
             }
 
             // ── Standalone screens ────────────────────────────────────────────
             composable(Screen.TransactionForm.route) { TransactionFormScreen(onNavigateBack = { navController.popBackStack() }) }
+            composable(Screen.ReceiptScanner.route)  { com.sndiy.chatfin.feature.finance.receipt.ui.ReceiptScannerScreen(onNavigateBack = { navController.popBackStack() }) }
             composable(Screen.BudgetList.route)      { BudgetScreen(onNavigateBack = { navController.popBackStack() }) }
             composable(Screen.Export.route)           { ExportScreen(onNavigateBack = { navController.popBackStack() }) }
 

@@ -8,6 +8,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -23,7 +24,10 @@ import androidx.compose.ui.unit.*
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -35,7 +39,13 @@ import com.sndiy.chatfin.core.ui.theme.ExpenseRed
 import com.sndiy.chatfin.core.ui.theme.IncomeGreen
 import java.text.NumberFormat
 import java.time.LocalDate
+import java.time.LocalTime
+import java.time.format.DateTimeFormatter
 import java.util.Locale
+import androidx.compose.foundation.clickable
+import com.sndiy.chatfin.core.ui.component.NumpadAmountDisplay
+import com.sndiy.chatfin.core.ui.component.NumpadKeyboard
+import com.sndiy.chatfin.core.ui.component.NumpadPresetChips
 
 private enum class TxFilter(val label: String) {
     ALL("Semua"), INCOME("Pemasukan"), EXPENSE("Pengeluaran")
@@ -46,6 +56,7 @@ private enum class TxFilter(val label: String) {
 fun TransactionListScreen(
     onNavigateBack: () -> Unit,
     onNavigateToAdd: () -> Unit,
+    onNavigateToReceiptScan: () -> Unit = {},
     viewModel: TransactionViewModel = hiltViewModel()
 ) {
     val listState         by viewModel.listState.collectAsStateWithLifecycle()
@@ -136,6 +147,9 @@ fun TransactionListScreen(
                                 else
                                     MaterialTheme.colorScheme.onSurfaceVariant
                             )
+                        }
+                        IconButton(onClick = onNavigateToReceiptScan) {
+                            Icon(Icons.Default.CameraAlt, "Scan Struk", tint = MaterialTheme.colorScheme.primary)
                         }
                         IconButton(onClick = { isSearchActive = true }) {
                             Icon(Icons.Default.Search, "Cari")
@@ -379,18 +393,37 @@ fun TransactionListScreen(
             onDismissRequest = { showEditSheet = false; viewModel.resetForm() },
             sheetState       = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ) {
-            EditTransactionSheet(
-                formState         = formState,
-                expenseCategories = listState.expenseCategories,
-                incomeCategories  = listState.incomeCategories,
-                wallets           = listState.wallets,
-                onAmountChange    = viewModel::onAmountChange,
-                onNoteChange      = viewModel::onNoteChange,
-                onCategorySelect  = viewModel::onCategorySelect,
-                onWalletSelect    = viewModel::onWalletSelect,
-                onSave            = viewModel::saveTransaction,
-                onDismiss         = { showEditSheet = false; viewModel.resetForm() }
-            )
+            if (formState.items.isNotEmpty()) {
+                EditOcrTransactionSheet(
+                    formState         = formState,
+                    expenseCategories = listState.expenseCategories,
+                    incomeCategories  = listState.incomeCategories,
+                    wallets           = listState.wallets,
+                    onNoteChange      = viewModel::onNoteChange,
+                    onDateChange      = viewModel::onDateChange,
+                    onTimeChange      = viewModel::onTimeChange,
+                    onCategorySelect  = viewModel::onCategorySelect,
+                    onWalletSelect    = viewModel::onWalletSelect,
+                    onItemsChange     = viewModel::onItemsChange,
+                    onSave            = viewModel::saveTransaction,
+                    onDismiss         = { showEditSheet = false; viewModel.resetForm() }
+                )
+            } else {
+                EditTransactionSheet(
+                    formState         = formState,
+                    expenseCategories = listState.expenseCategories,
+                    incomeCategories  = listState.incomeCategories,
+                    wallets           = listState.wallets,
+                    onAmountChange    = viewModel::onAmountChange,
+                    onNoteChange      = viewModel::onNoteChange,
+                    onDateChange      = viewModel::onDateChange,
+                    onTimeChange      = viewModel::onTimeChange,
+                    onCategorySelect  = viewModel::onCategorySelect,
+                    onWalletSelect    = viewModel::onWalletSelect,
+                    onSave            = viewModel::saveTransaction,
+                    onDismiss         = { showEditSheet = false; viewModel.resetForm() }
+                )
+            }
         }
     }
 }
@@ -625,17 +658,38 @@ private fun EditTransactionSheet(
     wallets: List<com.sndiy.chatfin.core.data.local.entity.WalletEntity>,
     onAmountChange: (String) -> Unit,
     onNoteChange: (String) -> Unit,
+    onDateChange: (LocalDate) -> Unit,
+    onTimeChange: (LocalTime) -> Unit,
     onCategorySelect: (CategoryEntity) -> Unit,
     onWalletSelect: (com.sndiy.chatfin.core.data.local.entity.WalletEntity) -> Unit,
     onSave: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    val fmt = remember { NumberFormat.getNumberInstance(Locale("id", "ID")) }
+    val scrollState = rememberScrollState()
     val categories = if (formState.type == TransactionType.INCOME) incomeCategories else expenseCategories
+
+    val digitsOnly = formState.amount.filter { it.isDigit() }
+    val amountNum = digitsOnly.toLongOrNull()
+    val formattedAmount = if (amountNum != null && amountNum > 0) fmt.format(amountNum) else digitsOnly
+
+    var showDatePicker by remember { mutableStateOf(false) }
+    var showTimePicker by remember { mutableStateOf(false) }
+
+    val formattedDateLabel = remember(formState.date) {
+        formState.date.format(DateTimeFormatter.ofPattern("dd MMM yyyy", Locale("id", "ID")))
+    }
+    val formattedTimeLabel = remember(formState.time) {
+        formState.time.format(DateTimeFormatter.ofPattern("HH:mm"))
+    }
+
     Column(
         modifier            = Modifier
             .fillMaxWidth()
             .padding(horizontal = 20.dp)
-            .padding(bottom = 32.dp),
+            .padding(bottom = 24.dp)
+            .verticalScroll(scrollState)
+            .imePadding(),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Row(
@@ -647,24 +701,106 @@ private fun EditTransactionSheet(
             IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, null) }
         }
         HorizontalDivider()
+        // Nominal display & Numpad visual (Tap-first)
+        NumpadAmountDisplay(
+            formattedAmount = formattedAmount,
+            currencyPrefix  = "Rp",
+            error           = formState.amountError
+        )
+
+        NumpadPresetChips(
+            presets    = listOf(5_000L, 10_000L, 20_000L, 50_000L, 100_000L, 200_000L, 500_000L),
+            currentRaw = digitsOnly,
+            onSelect   = { onAmountChange(it.toString()) }
+        )
+
+        NumpadKeyboard(
+            rawDigits   = digitsOnly,
+            onDigit     = { key ->
+                val next = (digitsOnly + key).trimStart('0').take(12).ifBlank { key }
+                onAmountChange(next)
+            },
+            onBackspace = {
+                if (digitsOnly.isNotEmpty()) onAmountChange(digitsOnly.dropLast(1))
+            },
+            onClear     = { onAmountChange("") },
+            buttonSize  = 64.dp
+        )
+
+        HorizontalDivider()
+
         OutlinedTextField(
-            value           = formState.amount,
-            onValueChange   = onAmountChange,
-            label           = { Text("Nominal") },
-            prefix          = { Text("Rp ") },
-            isError         = formState.amountError != null,
-            supportingText  = formState.amountError?.let { { Text(it) } },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            value           = formState.note,
+            onValueChange   = onNoteChange,
+            label           = { Text("Judul / Catatan (opsional)") },
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
             singleLine      = true,
             modifier        = Modifier.fillMaxWidth()
         )
-        OutlinedTextField(
-            value         = formState.note,
-            onValueChange = onNoteChange,
-            label         = { Text("Judul (opsional)") },
-            singleLine    = true,
-            modifier      = Modifier.fillMaxWidth()
-        )
+
+        // Preset Judul/Catatan Chips
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            val presets = listOf("Makan", "Minum", "Kopi", "Belanja", "Bensin", "Parkir", "Transportasi", "Gaji", "Bonus")
+            items(presets) { preset ->
+                val isSelected = formState.note == preset
+                FilterChip(
+                    selected = isSelected,
+                    onClick = { onNoteChange(if (isSelected) "" else preset) },
+                    label = { Text(preset, style = MaterialTheme.typography.labelSmall) },
+                    leadingIcon = if (isSelected) {
+                        { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(12.dp)) }
+                    } else null
+                )
+            }
+        }
+
+        // Tanggal & Waktu Interaktif
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Box(modifier = Modifier.weight(1.5f).clickable { showDatePicker = true }) {
+                OutlinedTextField(
+                    value = formattedDateLabel,
+                    onValueChange = {},
+                    readOnly = true,
+                    enabled = false,
+                    label = { Text("Tanggal") },
+                    leadingIcon = { Icon(Icons.Default.CalendarToday, contentDescription = "Tanggal") },
+                    trailingIcon = { Icon(Icons.Default.ArrowDropDown, contentDescription = "Pilih Tanggal") },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        disabledTextColor = MaterialTheme.colorScheme.onSurface,
+                        disabledBorderColor = MaterialTheme.colorScheme.outline,
+                        disabledLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        disabledLeadingIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        disabledTrailingIconColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    ),
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+            }
+            Box(modifier = Modifier.weight(1f).clickable { showTimePicker = true }) {
+                OutlinedTextField(
+                    value = formattedTimeLabel,
+                    onValueChange = {},
+                    readOnly = true,
+                    enabled = false,
+                    label = { Text("Waktu") },
+                    leadingIcon = { Icon(Icons.Default.Schedule, contentDescription = "Waktu") },
+                    trailingIcon = { Icon(Icons.Default.ArrowDropDown, contentDescription = "Pilih Waktu") },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        disabledTextColor = MaterialTheme.colorScheme.onSurface,
+                        disabledBorderColor = MaterialTheme.colorScheme.outline,
+                        disabledLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        disabledLeadingIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        disabledTrailingIconColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    ),
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+            }
+        }
+
         Text("Kategori", style = MaterialTheme.typography.labelMedium)
         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             items(categories) { cat ->
@@ -694,11 +830,411 @@ private fun EditTransactionSheet(
         Button(
             onClick  = onSave,
             enabled  = !formState.isLoading,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth().height(52.dp)
         ) {
             if (formState.isLoading) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-            else Text("Simpan Perubahan")
+            else Text("Simpan Perubahan", fontWeight = FontWeight.SemiBold)
         }
+    }
+
+    // Modal Date Picker
+    if (showDatePicker) {
+        val datePickerState = rememberDatePickerState(
+            initialSelectedDateMillis = formState.date.toEpochDay() * 86400000L
+        )
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    datePickerState.selectedDateMillis?.let { millis ->
+                        onDateChange(LocalDate.ofEpochDay(millis / 86400000L))
+                    }
+                    showDatePicker = false
+                }) { Text("OK") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDatePicker = false }) { Text("Batal") }
+            }
+        ) { DatePicker(state = datePickerState) }
+    }
+
+    // Modal Time Picker
+    if (showTimePicker) {
+        val timePickerState = rememberTimePickerState(
+            initialHour = formState.time.hour,
+            initialMinute = formState.time.minute,
+            is24Hour = true
+        )
+        AlertDialog(
+            onDismissRequest = { showTimePicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    onTimeChange(LocalTime.of(timePickerState.hour, timePickerState.minute))
+                    showTimePicker = false
+                }) { Text("OK") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showTimePicker = false }) { Text("Batal") }
+            },
+            text = { TimePicker(state = timePickerState) }
+        )
+    }
+}
+
+// ── Edit OCR Multi-Item Sheet ────────────────────────────────────────────────
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun EditOcrTransactionSheet(
+    formState: TransactionFormState,
+    expenseCategories: List<CategoryEntity>,
+    incomeCategories: List<CategoryEntity>,
+    wallets: List<com.sndiy.chatfin.core.data.local.entity.WalletEntity>,
+    onNoteChange: (String) -> Unit,
+    onDateChange: (LocalDate) -> Unit,
+    onTimeChange: (LocalTime) -> Unit,
+    onCategorySelect: (CategoryEntity) -> Unit,
+    onWalletSelect: (com.sndiy.chatfin.core.data.local.entity.WalletEntity) -> Unit,
+    onItemsChange: (List<com.sndiy.chatfin.core.data.local.entity.TransactionItemEntity>) -> Unit,
+    onSave: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val fmt = remember { NumberFormat.getNumberInstance(Locale("id", "ID")) }
+    val scrollState = rememberScrollState()
+    val categories = if (formState.type == TransactionType.INCOME) incomeCategories else expenseCategories
+    var items by remember(formState.items) { mutableStateOf(formState.items) }
+
+    val itemsSum = items.sumOf { it.price }
+
+    var showDatePicker by remember { mutableStateOf(false) }
+    var showTimePicker by remember { mutableStateOf(false) }
+
+    val formattedDateLabel = remember(formState.date) {
+        formState.date.format(DateTimeFormatter.ofPattern("dd MMM yyyy", Locale("id", "ID")))
+    }
+    val formattedTimeLabel = remember(formState.time) {
+        formState.time.format(DateTimeFormatter.ofPattern("HH:mm"))
+    }
+
+    Column(
+        modifier            = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp)
+            .padding(bottom = 24.dp)
+            .verticalScroll(scrollState)
+            .imePadding(),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Row(
+            modifier              = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment     = Alignment.CenterVertically
+        ) {
+            Column {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Edit Struk Belanja", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.8f)
+                    ) {
+                        Text(
+                            text = "OCR Struk",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontSize = 10.sp,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+                Text("Edit rincian item barang dan toko hasil scan OCR", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, null) }
+        }
+        HorizontalDivider()
+
+        // 1. Nama Toko / Merchant
+        OutlinedTextField(
+            value           = formState.note,
+            onValueChange   = onNoteChange,
+            label           = { Text("Nama Toko / Merchant") },
+            leadingIcon     = { Icon(Icons.Default.Store, contentDescription = null) },
+            singleLine      = true,
+            modifier        = Modifier.fillMaxWidth()
+        )
+
+        // 2. Tanggal & Waktu Interaktif
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Box(modifier = Modifier.weight(1.5f).clickable { showDatePicker = true }) {
+                OutlinedTextField(
+                    value = formattedDateLabel,
+                    onValueChange = {},
+                    readOnly = true,
+                    enabled = false,
+                    label = { Text("Tanggal") },
+                    leadingIcon = { Icon(Icons.Default.CalendarToday, contentDescription = "Tanggal") },
+                    trailingIcon = { Icon(Icons.Default.ArrowDropDown, contentDescription = "Pilih Tanggal") },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        disabledTextColor = MaterialTheme.colorScheme.onSurface,
+                        disabledBorderColor = MaterialTheme.colorScheme.outline,
+                        disabledLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        disabledLeadingIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        disabledTrailingIconColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    ),
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+            }
+            Box(modifier = Modifier.weight(1f).clickable { showTimePicker = true }) {
+                OutlinedTextField(
+                    value = formattedTimeLabel,
+                    onValueChange = {},
+                    readOnly = true,
+                    enabled = false,
+                    label = { Text("Waktu") },
+                    leadingIcon = { Icon(Icons.Default.Schedule, contentDescription = "Waktu") },
+                    trailingIcon = { Icon(Icons.Default.ArrowDropDown, contentDescription = "Pilih Waktu") },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        disabledTextColor = MaterialTheme.colorScheme.onSurface,
+                        disabledBorderColor = MaterialTheme.colorScheme.outline,
+                        disabledLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        disabledLeadingIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        disabledTrailingIconColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    ),
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+            }
+        }
+
+        // 3. Daftar Item Belanja
+        Card(
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+            ),
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
+                modifier = Modifier.padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Daftar Item (${items.size})",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    TextButton(
+                        onClick = {
+                            val newItem = com.sndiy.chatfin.core.data.local.entity.TransactionItemEntity(
+                                transactionId = formState.editingId ?: "",
+                                name = "",
+                                price = 0L
+                            )
+                            val updated = items + newItem
+                            items = updated
+                            onItemsChange(updated)
+                        }
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Tambah Item")
+                    }
+                }
+
+                if (items.isEmpty()) {
+                    Text(
+                        text = "Belum ada item belanja. Klik Tambah Item untuk mengisi rincian.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    items.forEachIndexed { index, item ->
+                        val itemPriceFormatted = if (item.price > 0L) fmt.format(item.price) else ""
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            OutlinedTextField(
+                                value = item.name,
+                                onValueChange = { updatedName ->
+                                    val updated = items.toMutableList().apply {
+                                        this[index] = item.copy(name = updatedName)
+                                    }
+                                    items = updated
+                                    onItemsChange(updated)
+                                },
+                                placeholder = { Text("Nama item") },
+                                modifier = Modifier.weight(1.8f),
+                                singleLine = true
+                            )
+
+                            OutlinedTextField(
+                                value = itemPriceFormatted,
+                                onValueChange = { updatedPriceInput ->
+                                    val newPrice = updatedPriceInput.filter { it.isDigit() }.toLongOrNull() ?: 0L
+                                    val updated = items.toMutableList().apply {
+                                        this[index] = item.copy(price = newPrice)
+                                    }
+                                    items = updated
+                                    onItemsChange(updated)
+                                },
+                                prefix = { Text("Rp ", style = MaterialTheme.typography.bodySmall) },
+                                placeholder = { Text("0") },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                modifier = Modifier.weight(1.2f),
+                                singleLine = true
+                            )
+
+                            IconButton(
+                                onClick = {
+                                    val updated = items.filterIndexed { i, _ -> i != index }
+                                    items = updated
+                                    onItemsChange(updated)
+                                }
+                            ) {
+                                Icon(
+                                    Icons.Default.Delete,
+                                    contentDescription = "Hapus Item",
+                                    tint = MaterialTheme.colorScheme.error
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 4. Kategori Transaksi
+        Text("Kategori", style = MaterialTheme.typography.labelMedium)
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(categories) { cat ->
+                FilterChip(
+                    selected = formState.selectedCategory?.id == cat.id,
+                    onClick  = { onCategorySelect(cat) },
+                    label    = { Text(cat.name) }
+                )
+            }
+        }
+
+        // 5. Dompet Sumber
+        Text("Dompet", style = MaterialTheme.typography.labelMedium)
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(wallets) { w ->
+                FilterChip(
+                    selected = formState.selectedWallet?.id == w.id,
+                    onClick  = { onWalletSelect(w) },
+                    label    = { Text(w.name) }
+                )
+            }
+        }
+
+        // 6. Total Nominal Belanja (Read-Only Card at Bottom)
+        Card(
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.8f)
+            ),
+            shape = RoundedCornerShape(16.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.Default.Lock,
+                            contentDescription = "Terkunci dari Item",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "Total Nominal Struk",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                    Text(
+                        text = "Penjumlahan ${items.size} item belanja",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                    )
+                }
+
+                Text(
+                    text = "Rp ${if (itemsSum > 0L) fmt.format(itemsSum) else "0"}",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+        }
+
+        Button(
+            onClick  = onSave,
+            enabled  = !formState.isLoading,
+            modifier = Modifier.fillMaxWidth().height(52.dp)
+        ) {
+            if (formState.isLoading) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+            else Text("Simpan Perubahan", fontWeight = FontWeight.SemiBold)
+        }
+    }
+
+    // Modal Date Picker
+    if (showDatePicker) {
+        val datePickerState = rememberDatePickerState(
+            initialSelectedDateMillis = formState.date.toEpochDay() * 86400000L
+        )
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    datePickerState.selectedDateMillis?.let { millis ->
+                        onDateChange(LocalDate.ofEpochDay(millis / 86400000L))
+                    }
+                    showDatePicker = false
+                }) { Text("OK") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDatePicker = false }) { Text("Batal") }
+            }
+        ) { DatePicker(state = datePickerState) }
+    }
+
+    // Modal Time Picker
+    if (showTimePicker) {
+        val timePickerState = rememberTimePickerState(
+            initialHour = formState.time.hour,
+            initialMinute = formState.time.minute,
+            is24Hour = true
+        )
+        AlertDialog(
+            onDismissRequest = { showTimePicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    onTimeChange(LocalTime.of(timePickerState.hour, timePickerState.minute))
+                    showTimePicker = false
+                }) { Text("OK") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showTimePicker = false }) { Text("Batal") }
+            },
+            text = { TimePicker(state = timePickerState) }
+        )
     }
 }
 
@@ -714,6 +1250,8 @@ private fun TransactionItem(
 ) {
     val isIncome   = transaction.type == "INCOME"
     val isTransfer = transaction.type == "TRANSFER"
+    val isReceipt  = transaction.receiptImageUri != null || transaction.note?.contains("Struk", ignoreCase = true) == true
+
     val amountColor = when {
         isIncome   -> IncomeGreen
         isTransfer -> MaterialTheme.colorScheme.primary
@@ -747,24 +1285,75 @@ private fun TransactionItem(
                 modifier         = Modifier.size(48.dp).clip(CircleShape).background(categoryColor),
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    if (isTransfer) "↔" else category?.name?.take(1) ?: "?",
-                    style      = MaterialTheme.typography.titleMedium,
-                    color      = Color.White,
-                    fontWeight = FontWeight.Bold
-                )
+                if (isReceipt) {
+                    Icon(
+                        imageVector = Icons.Default.ReceiptLong,
+                        contentDescription = "Struk",
+                        tint = Color.White,
+                        modifier = Modifier.size(24.dp)
+                    )
+                } else if (isTransfer) {
+                    Text(
+                        "↔",
+                        style      = MaterialTheme.typography.titleMedium,
+                        color      = Color.White,
+                        fontWeight = FontWeight.Bold
+                    )
+                } else {
+                    Text(
+                        category?.name?.take(1) ?: "?",
+                        style      = MaterialTheme.typography.titleMedium,
+                        color      = Color.White,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
+
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = transaction.note?.takeIf { it.isNotBlank() }
+                            ?: if (isTransfer) "Transfer" else category?.name ?: "?",
+                        style      = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines   = 1,
+                        overflow   = TextOverflow.Ellipsis,
+                        modifier   = Modifier.weight(1f, fill = false)
+                    )
+
+                    if (isReceipt) {
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.8f)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(3.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.CameraAlt,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(12.dp)
+                                )
+                                Text(
+                                    text = "OCR Struk",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontSize = 10.sp,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+                }
+
                 Text(
-                    transaction.note?.takeIf { it.isNotBlank() }
-                        ?: if (isTransfer) "Transfer" else category?.name ?: "?",
-                    style      = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines   = 1,
-                    overflow   = TextOverflow.Ellipsis
-                )
-                Text(
-                    buildString {
+                    text = buildString {
                         append(if (isTransfer) "Transfer" else category?.name ?: "?")
                         append(" · "); append(walletName)
                         append(" · "); append(transaction.time)
@@ -775,6 +1364,7 @@ private fun TransactionItem(
                     overflow = TextOverflow.Ellipsis
                 )
             }
+
             Column(
                 horizontalAlignment = Alignment.End,
                 verticalArrangement = Arrangement.spacedBy(2.dp)
