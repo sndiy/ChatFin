@@ -19,14 +19,8 @@ android {
         // targetSdk 36 (Android 16) wajib untuk update aplikasi di Play Store —
         // dengan 35, Play menolak upload/update APK apa pun.
         targetSdk       = 36
-        // versionName diselaraskan dengan realita rilis: git log terakhir
-        // "Update 2.3.1" dan layar Tentang sebelumnya hardcode "Versi 2.3.1",
-        // sementara nilai di sini masih 1.0.0. Sekarang file ini jadi satu-satunya
-        // sumber kebenaran — AboutScreen/SettingsScreen membacanya lewat
-        // BuildConfig.VERSION_NAME.
-        // 2.6.0: Adaptive OCR multilingual receipt parser, Tap-First UI with Numpad & DatePicker/TimePicker, and default custom notes.
-        versionCode     = 4
-        versionName     = "2.6.0"
+        versionCode     = 5
+        versionName     = "2.7.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
