@@ -27,12 +27,16 @@ class AppPreferences @Inject constructor(
         val ONBOARDING_DONE    = booleanPreferencesKey("onboarding_done")
         val THEME_MODE         = stringPreferencesKey("theme_mode") // LIGHT | DARK | SYSTEM
         val CURRENCY           = stringPreferencesKey("currency")
+        val BACKGROUND_TASK_NOTIF_ENABLED = booleanPreferencesKey("background_task_notif_enabled")
+        val DAILY_REMINDER_NOTIF_ENABLED  = booleanPreferencesKey("daily_reminder_notif_enabled")
     }
 
     val activeAccountId: Flow<String?> = context.dataStore.data.map { it[Keys.ACTIVE_ACCOUNT_ID] }
     val activeSessionId: Flow<String?> = context.dataStore.data.map { it[Keys.ACTIVE_SESSION_ID] }
     val onboardingDone: Flow<Boolean>  = context.dataStore.data.map { it[Keys.ONBOARDING_DONE] ?: false }
     val themeMode: Flow<String>        = context.dataStore.data.map { it[Keys.THEME_MODE] ?: "SYSTEM" }
+    val backgroundTaskNotifEnabled: Flow<Boolean> = context.dataStore.data.map { it[Keys.BACKGROUND_TASK_NOTIF_ENABLED] ?: true }
+    val dailyReminderNotifEnabled: Flow<Boolean>  = context.dataStore.data.map { it[Keys.DAILY_REMINDER_NOTIF_ENABLED] ?: true }
 
     suspend fun setActiveAccountId(id: String) {
         context.dataStore.edit { it[Keys.ACTIVE_ACCOUNT_ID] = id }
@@ -48,5 +52,13 @@ class AppPreferences @Inject constructor(
 
     suspend fun setThemeMode(mode: String) {
         context.dataStore.edit { it[Keys.THEME_MODE] = mode }
+    }
+
+    suspend fun setBackgroundTaskNotifEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.BACKGROUND_TASK_NOTIF_ENABLED] = enabled }
+    }
+
+    suspend fun setDailyReminderNotifEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.DAILY_REMINDER_NOTIF_ENABLED] = enabled }
     }
 }

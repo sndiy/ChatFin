@@ -47,6 +47,14 @@ class ChatRepository @Inject constructor(
         }
     }
 
+    suspend fun deleteMessage(id: String) {
+        chatDao.deleteMessageById(id)
+    }
+
+    suspend fun updateMessage(id: String, newContent: String) {
+        chatDao.updateMessageContent(id, newContent)
+    }
+
     suspend fun clearSession(sessionId: String) {
         chatDao.deleteMessagesBySession(sessionId)
         chatDao.getSessionById(sessionId)?.let { session ->

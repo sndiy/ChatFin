@@ -1,5 +1,10 @@
 package com.sndiy.chatfin.feature.settings.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -12,14 +17,16 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.compose.ui.res.stringResource
 import androidx.navigation.NavController
 import com.sndiy.chatfin.BuildConfig
 import com.sndiy.chatfin.R
@@ -30,26 +37,39 @@ import com.sndiy.chatfin.feature.auth.ui.AuthViewModel
 import com.sndiy.chatfin.feature.settings.apikey.ApiKeyViewModel
 import com.sndiy.chatfin.feature.settings.persona.PersonaViewModel
 
-// FIX BUG 4: Tambah Scaffold + TopAppBar agar konsisten dengan Dashboard/Riwayat/Chat
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     navController: NavController,
     authViewModel: AuthViewModel = hiltViewModel(),
     apiKeyViewModel: ApiKeyViewModel = hiltViewModel(),
-    personaViewModel: PersonaViewModel = hiltViewModel()
+    personaViewModel: PersonaViewModel = hiltViewModel(),
+    settingsViewModel: SettingsViewModel = hiltViewModel()
 ) {
     val authState by authViewModel.uiState.collectAsStateWithLifecycle()
     val apiKeyState by apiKeyViewModel.uiState.collectAsStateWithLifecycle()
     val activePersonaId by personaViewModel.activePersonaId.collectAsStateWithLifecycle()
+    val bgTaskNotifEnabled by settingsViewModel.backgroundTaskNotifEnabled.collectAsStateWithLifecycle()
+    val dailyReminderNotifEnabled by settingsViewModel.dailyReminderNotifEnabled.collectAsStateWithLifecycle()
+
     val isLoggedIn = authState.currentUser != null
     val userEmail  = authState.currentUser?.email ?: ""
+    val context = LocalContext.current
 
-    // apiKeyViewModel melekat ke back stack entry Setelan (hidup lebih lama
-    // dari satu kunjungan ke ApiKeyScreen) — subtitle "Aktif"/"Belum diset"
-    // wajib disegarkan tiap kali layar ini kembali terlihat, bukan cuma sekali
-    // saat pertama dibuat, atau status key jadi basi setelah simpan/hapus.
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+        onResult = { _ -> }
+    )
+
+    fun handleNotifToggle(enabled: Boolean, onToggle: (Boolean) -> Unit) {
+        if (enabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+        onToggle(enabled)
+    }
+
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -118,6 +138,23 @@ fun SettingsScreen(
                         PersonaPresets.byId(activePersonaId).displayName
                     ),
                     onClick = { navController.navigate(Screen.SettingsPersona.route) }
+                )
+            }
+
+            SettingsSection(title = stringResource(R.string.settings_section_notification)) {
+                SettingsSwitchItem(
+                    icon = Icons.Default.Sync,
+                    title = stringResource(R.string.settings_notif_bg_task_title),
+                    subtitle = stringResource(R.string.settings_notif_bg_task_subtitle),
+                    checked = bgTaskNotifEnabled,
+                    onCheckedChange = { handleNotifToggle(it, settingsViewModel::toggleBackgroundTaskNotif) }
+                )
+                SettingsSwitchItem(
+                    icon = Icons.Default.NotificationsActive,
+                    title = stringResource(R.string.settings_notif_daily_reminder_title),
+                    subtitle = stringResource(R.string.settings_notif_daily_reminder_subtitle),
+                    checked = dailyReminderNotifEnabled,
+                    onCheckedChange = { handleNotifToggle(it, settingsViewModel::toggleDailyReminderNotif) }
                 )
             }
 
@@ -200,6 +237,39 @@ private fun SettingsItem(
                 interactionSource = interactionSource,
                 indication         = LocalIndication.current,
                 onClick            = onClick
+            )
+    )
+}
+
+@Composable
+private fun SettingsSwitchItem(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    ListItem(
+        headlineContent = { Text(title, style = MaterialTheme.typography.bodyLarge) },
+        supportingContent = {
+            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        },
+        leadingContent = {
+            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        },
+        trailingContent = {
+            Switch(
+                checked = checked,
+                onCheckedChange = onCheckedChange
+            )
+        },
+        modifier = Modifier
+            .pressScale(interactionSource, pressedScale = 0.985f)
+            .clickable(
+                interactionSource = interactionSource,
+                indication         = LocalIndication.current,
+                onClick            = { onCheckedChange(!checked) }
             )
     )
 }

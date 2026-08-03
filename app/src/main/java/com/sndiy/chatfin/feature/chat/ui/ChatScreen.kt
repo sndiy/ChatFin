@@ -1,5 +1,6 @@
 package com.sndiy.chatfin.feature.chat.ui
 
+import android.widget.Toast
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.layout.*
@@ -8,9 +9,14 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.sndiy.chatfin.R
 import com.sndiy.chatfin.core.ui.theme.MaiPurple
 import kotlinx.coroutines.delay
 
@@ -18,6 +24,9 @@ import kotlinx.coroutines.delay
 fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
     val uiState           by viewModel.uiState.collectAsStateWithLifecycle()
     val isCheckingNetwork by viewModel.isCheckingNetwork.collectAsStateWithLifecycle()
+    val clipboardManager  = LocalClipboardManager.current
+    val context           = LocalContext.current
+    val copiedToastMsg    = stringResource(R.string.chat_copied_toast)
 
     ChatScreenContent(
         uiState              = uiState,
@@ -31,7 +40,18 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
         onOptionSelected     = viewModel::onOptionSelected,
         onConfirmTransaction = viewModel::confirmTransaction,
         onCancelTransaction  = viewModel::cancelTransaction,
-        onQuickAction        = viewModel::quickAction
+        onQuickAction        = viewModel::quickAction,
+        onCopyText           = { text ->
+            clipboardManager.setText(AnnotatedString(text))
+            Toast.makeText(context, copiedToastMsg, Toast.LENGTH_SHORT).show()
+        },
+        onEditMessage        = viewModel::editMessage,
+        onDeleteMessage      = viewModel::deleteMessage,
+        onReplyMessage       = { messageId, _ ->
+            val msg = uiState.messages.find { it.id == messageId }
+            if (msg != null) viewModel.setReplyingMessage(msg)
+        },
+        onCancelReply        = viewModel::clearReplyingMessage
     )
 }
 
@@ -49,10 +69,18 @@ private fun ChatScreenContent(
     onOptionSelected: (com.sndiy.chatfin.ai.ChatOption, String) -> Unit,
     onConfirmTransaction: () -> Unit,
     onCancelTransaction: () -> Unit,
-    onQuickAction: (String) -> Unit
+    onQuickAction: (String) -> Unit,
+    onCopyText: (String) -> Unit,
+    onEditMessage: (String, String) -> Unit,
+    onDeleteMessage: (String) -> Unit,
+    onReplyMessage: (String, String) -> Unit,
+    onCancelReply: () -> Unit
 ) {
     val listState = rememberLazyListState()
     var showClearDialog by remember { mutableStateOf(false) }
+    val lastUserMessageId = remember(uiState.messages) {
+        uiState.messages.lastOrNull { it.role == "user" }?.id
+    }
 
     LaunchedEffect(uiState.messages.size, uiState.messages.lastOrNull()?.id) {
         if (uiState.messages.isNotEmpty()) {
@@ -89,14 +117,16 @@ private fun ChatScreenContent(
                     onBotMode = onBotMode
                 )
                 ChatInputBar(
-                    text      = uiState.inputText,
-                    isTyping  = uiState.isTyping,
-                    isBotMode = uiState.isBotMode,
-                    enabled   = !isCheckingNetwork &&
+                    text              = uiState.inputText,
+                    isTyping          = uiState.isTyping,
+                    isBotMode         = uiState.isBotMode,
+                    enabled           = !isCheckingNetwork &&
                             (uiState.connectionStatus != ConnectionStatus.NO_INTERNET || uiState.isBotMode),
-                    onChange  = onInputChange,
-                    onSend    = onSendMessage,
-                    onStop    = onStopGeneration
+                    replyingToMessage = uiState.replyingToMessage,
+                    onCancelReply     = onCancelReply,
+                    onChange          = onInputChange,
+                    onSend            = onSendMessage,
+                    onStop            = onStopGeneration
                 )
             }
         }
@@ -143,15 +173,28 @@ private fun ChatScreenContent(
                             ) {
                                 when {
                                     message.isLoading      -> TypingIndicatorBubble()
-                                    message.role == "user" -> UserMessageBubble(text = message.text)
+                                    message.role == "user" -> UserMessageBubble(
+                                        messageId       = message.id,
+                                        text            = message.text,
+                                        isEditable      = message.id == lastUserMessageId,
+                                        onCopyText      = onCopyText,
+                                        onEditMessage   = onEditMessage,
+                                        onDeleteMessage = onDeleteMessage,
+                                        onReplyMessage  = onReplyMessage
+                                    )
                                     else -> AiMessageBubble(
+                                        messageId            = message.id,
                                         text                 = message.text,
                                         option               = message.option,
                                         isError              = message.isError,
+                                        transactions         = uiState.transactions,
                                         pendingTransaction   = uiState.pendingTransaction,
                                         onOptionSelected     = { value -> onOptionSelected(message.option!!, value) },
                                         onConfirmTransaction = onConfirmTransaction,
-                                        onCancelTransaction  = onCancelTransaction
+                                        onCancelTransaction  = onCancelTransaction,
+                                        onCopyText           = onCopyText,
+                                        onDeleteMessage      = onDeleteMessage,
+                                        onReplyMessage       = onReplyMessage
                                     )
                                 }
                             }

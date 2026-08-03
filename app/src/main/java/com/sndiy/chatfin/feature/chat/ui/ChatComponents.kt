@@ -89,6 +89,64 @@ internal fun ChatTopBar(
     )
 }
 
+// ── Reply Preview Banner ──────────────────────────────────────────────────────
+@Composable
+internal fun ReplyPreviewBanner(
+    message: UiMessage,
+    onCancelReply: () -> Unit
+) {
+    val author = if (message.role == "user") "Kamu" else "Mai"
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                modifier = Modifier.weight(1f),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Reply,
+                    contentDescription = null,
+                    tint = MaiPurple,
+                    modifier = Modifier.size(18.dp)
+                )
+                Column {
+                    Text(
+                        text = "Membalas $author",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaiPurple
+                    )
+                    Text(
+                        text = message.text.take(50).replace("\n", " "),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1
+                    )
+                }
+            }
+            IconButton(
+                onClick = onCancelReply,
+                modifier = Modifier.size(24.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Close,
+                    contentDescription = "Batal balas",
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+        }
+    }
+}
+
 // ── Input Bar ─────────────────────────────────────────────────────────────────
 @Composable
 internal fun ChatInputBar(
@@ -96,73 +154,83 @@ internal fun ChatInputBar(
     isTyping: Boolean,
     isBotMode: Boolean,
     enabled: Boolean,
+    replyingToMessage: UiMessage? = null,
+    onCancelReply: () -> Unit = {},
     onChange: (String) -> Unit,
     onSend: () -> Unit,
     onStop: () -> Unit
 ) {
     Surface(tonalElevation = 3.dp, modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier              = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalAlignment     = Alignment.Bottom,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            OutlinedTextField(
-                value         = text,
-                onValueChange = onChange,
-                placeholder   = {
-                    Text(
-                        when {
-                            !enabled && !isBotMode -> "Memeriksa koneksi..."
-                            isTyping               -> "Mai sedang mengetik..."
-                            isBotMode              -> "Ketik perintah bot (help untuk bantuan)..."
-                            else                   -> "Tulis sesuatu ke Mai..."
-                        },
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                },
-                maxLines        = 4,
-                enabled         = enabled && !isTyping,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                keyboardActions = KeyboardActions(onSend = { if (!isTyping) onSend() }),
-                shape  = RoundedCornerShape(24.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor   = MaiPurple,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
-                    disabledBorderColor  = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
-                    cursorColor          = MaiPurple
-                ),
-                modifier = Modifier.weight(1f)
-            )
+        Column {
+            if (replyingToMessage != null) {
+                ReplyPreviewBanner(
+                    message = replyingToMessage,
+                    onCancelReply = onCancelReply
+                )
+            }
+            Row(
+                modifier              = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment     = Alignment.Bottom,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedTextField(
+                    value         = text,
+                    onValueChange = onChange,
+                    placeholder   = {
+                        Text(
+                            when {
+                                !enabled && !isBotMode -> "Memeriksa koneksi..."
+                                isTyping               -> "Mai sedang mengetik..."
+                                isBotMode              -> "Ketik perintah bot (help untuk bantuan)..."
+                                else                   -> "Tulis sesuatu ke Mai..."
+                            },
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    },
+                    maxLines        = 4,
+                    enabled         = enabled && !isTyping,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                    keyboardActions = KeyboardActions(onSend = { if (!isTyping) onSend() }),
+                    shape  = RoundedCornerShape(24.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor   = MaiPurple,
+                        unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
+                        disabledBorderColor  = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
+                        cursorColor          = MaiPurple
+                    ),
+                    modifier = Modifier.weight(1f)
+                )
 
-            AnimatedContent(
-                targetState   = isTyping,
-                transitionSpec = {
-                    scaleIn(animationSpec = tween(200)) + fadeIn() togetherWith
-                            scaleOut(animationSpec = tween(200)) + fadeOut()
-                },
-                label = "send_stop_button"
-            ) { typing ->
-                if (typing) {
-                    FilledIconButton(
-                        onClick  = onStop,
-                        modifier = Modifier.size(48.dp),
-                        colors   = IconButtonDefaults.filledIconButtonColors(
-                            containerColor = MaterialTheme.colorScheme.errorContainer,
-                            contentColor   = MaterialTheme.colorScheme.onErrorContainer
-                        )
-                    ) { Icon(Icons.Default.Stop, contentDescription = "Berhenti") }
-                } else {
-                    FilledIconButton(
-                        onClick  = onSend,
-                        enabled  = text.isNotBlank() && enabled,
-                        modifier = Modifier.size(48.dp),
-                        colors   = IconButtonDefaults.filledIconButtonColors(
-                            containerColor = MaiPurple,
-                            contentColor   = Color.White,
-                            disabledContainerColor = MaiPurple.copy(alpha = 0.3f),
-                            disabledContentColor   = Color.White.copy(alpha = 0.5f)
-                        )
-                    ) { Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Kirim") }
+                AnimatedContent(
+                    targetState   = isTyping,
+                    transitionSpec = {
+                        scaleIn(animationSpec = tween(200)) + fadeIn() togetherWith
+                                scaleOut(animationSpec = tween(200)) + fadeOut()
+                    },
+                    label = "send_stop_button"
+                ) { typing ->
+                    if (typing) {
+                        FilledIconButton(
+                            onClick  = onStop,
+                            modifier = Modifier.size(48.dp),
+                            colors   = IconButtonDefaults.filledIconButtonColors(
+                                containerColor = MaterialTheme.colorScheme.errorContainer,
+                                contentColor   = MaterialTheme.colorScheme.onErrorContainer
+                            )
+                        ) { Icon(Icons.Default.Stop, contentDescription = "Berhenti") }
+                    } else {
+                        FilledIconButton(
+                            onClick  = onSend,
+                            enabled  = text.isNotBlank() && enabled,
+                            modifier = Modifier.size(48.dp),
+                            colors   = IconButtonDefaults.filledIconButtonColors(
+                                containerColor = MaiPurple,
+                                contentColor   = Color.White,
+                                disabledContainerColor = MaiPurple.copy(alpha = 0.3f),
+                                disabledContentColor   = Color.White.copy(alpha = 0.5f)
+                            )
+                        ) { Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Kirim") }
+                    }
                 }
             }
         }
@@ -243,19 +311,39 @@ internal fun ConnectionStatusBanner(
 
 // ── User Bubble ───────────────────────────────────────────────────────────────
 @Composable
-internal fun UserMessageBubble(text: String) {
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-        Surface(
-            shape    = RoundedCornerShape(topStart = 18.dp, topEnd = 4.dp, bottomStart = 18.dp, bottomEnd = 18.dp),
-            color    = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.widthIn(max = 300.dp)
-        ) {
-            Text(
-                text     = text,
-                color    = MaterialTheme.colorScheme.onPrimary,
-                style    = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
-            )
+internal fun UserMessageBubble(
+    messageId: String,
+    text: String,
+    isEditable: Boolean = true,
+    onCopyText: (String) -> Unit = {},
+    onEditMessage: (String, String) -> Unit = { _, _ -> },
+    onDeleteMessage: (String) -> Unit = {},
+    onReplyMessage: (String, String) -> Unit = { _, _ -> }
+) {
+    InteractiveChatBubble(
+        messageId = messageId,
+        text = text,
+        isUser = true,
+        isEditable = isEditable,
+        onCopyText = onCopyText,
+        onEditMessage = onEditMessage,
+        onDeleteMessage = onDeleteMessage,
+        onReplyMessage = onReplyMessage,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            Surface(
+                shape    = RoundedCornerShape(topStart = 18.dp, topEnd = 4.dp, bottomStart = 18.dp, bottomEnd = 18.dp),
+                color    = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.widthIn(max = 300.dp)
+            ) {
+                Text(
+                    text     = text,
+                    color    = MaterialTheme.colorScheme.onPrimary,
+                    style    = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
+                )
+            }
         }
     }
 }
@@ -263,13 +351,18 @@ internal fun UserMessageBubble(text: String) {
 // ── AI Bubble ─────────────────────────────────────────────────────────────────
 @Composable
 internal fun AiMessageBubble(
+    messageId: String,
     text: String,
     option: ChatOption?,
     isError: Boolean,
+    transactions: List<com.sndiy.chatfin.core.data.local.entity.TransactionEntity> = emptyList(),
     pendingTransaction: PendingTransaction?,
     onOptionSelected: (String) -> Unit,
     onConfirmTransaction: () -> Unit,
-    onCancelTransaction: () -> Unit
+    onCancelTransaction: () -> Unit,
+    onCopyText: (String) -> Unit = {},
+    onDeleteMessage: (String) -> Unit = {},
+    onReplyMessage: (String, String) -> Unit = { _, _ -> }
 ) {
     Row(
         modifier              = Modifier.fillMaxWidth(),
@@ -296,19 +389,30 @@ internal fun AiMessageBubble(
             verticalArrangement   = Arrangement.spacedBy(6.dp)
         ) {
             if (text.isNotBlank()) {
-                Surface(
-                    shape    = RoundedCornerShape(topStart = 4.dp, topEnd = 18.dp, bottomStart = 18.dp, bottomEnd = 18.dp),
-                    color    = if (isError) MaterialTheme.colorScheme.errorContainer
-                              else MaterialTheme.colorScheme.surfaceVariant,
+                InteractiveChatBubble(
+                    messageId = messageId,
+                    text = text,
+                    isUser = false,
+                    isEditable = false,
+                    onCopyText = onCopyText,
+                    onDeleteMessage = onDeleteMessage,
+                    onReplyMessage = onReplyMessage,
                     modifier = Modifier.widthIn(max = 300.dp)
                 ) {
-                    Text(
-                        text     = parseMarkdown(text),
-                        style    = MaterialTheme.typography.bodyMedium,
-                        color    = if (isError) MaterialTheme.colorScheme.onErrorContainer
-                                  else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp).fillMaxWidth()
-                    )
+                    Surface(
+                        shape    = RoundedCornerShape(topStart = 4.dp, topEnd = 18.dp, bottomStart = 18.dp, bottomEnd = 18.dp),
+                        color    = if (isError) MaterialTheme.colorScheme.errorContainer
+                                  else MaterialTheme.colorScheme.surfaceVariant,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text     = parseMarkdown(text),
+                            style    = MaterialTheme.typography.bodyMedium,
+                            color    = if (isError) MaterialTheme.colorScheme.onErrorContainer
+                                      else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp).fillMaxWidth()
+                        )
+                    }
                 }
             }
             when (option) {
@@ -321,6 +425,36 @@ internal fun AiMessageBubble(
                         onClick = { onOptionSelected("Ya") },
                         colors  = ButtonDefaults.buttonColors(containerColor = MaiPurple)
                     ) { Text("Ya") }
+                }
+                is ChatOption.VisualizationRequest -> {
+                    InteractiveChartCard(
+                        title = option.title,
+                        transactions = transactions,
+                        initialType = when (option.initialType) {
+                            "LINE" -> ChartType.LINE
+                            "PIE" -> ChartType.PIE
+                            "DONUT" -> ChartType.DONUT
+                            else -> ChartType.BAR
+                        },
+                        initialPeriod = when (option.initialPeriod) {
+                            "LAST_30_DAYS" -> DateRangePeriod.LAST_30_DAYS
+                            "LAST_3_MONTHS" -> DateRangePeriod.LAST_3_MONTHS
+                            "THIS_YEAR" -> DateRangePeriod.THIS_YEAR
+                            else -> DateRangePeriod.THIS_MONTH
+                        }
+                    )
+                }
+                is ChatOption.TableRequest -> {
+                    InteractiveTableCard(
+                        title = option.title,
+                        transactions = transactions,
+                        initialTemplate = when (option.initialTemplate) {
+                            "DAILY_DETAILS" -> TableTemplate.DAILY_DETAILS
+                            "MONTHLY_COMPARISON" -> TableTemplate.MONTHLY_COMPARISON
+                            "AUTO_AI" -> TableTemplate.AUTO_AI
+                            else -> TableTemplate.CATEGORY_SUMMARY
+                        }
+                    )
                 }
                 null -> {}
             }
@@ -483,6 +617,8 @@ internal fun ChatWelcomeState(accountName: String?, onQuickAction: (String) -> U
 
     val quickActions = listOf(
         "💰 Cek saldo"               to "saldo",
+        "📈 Grafik pengeluaran"       to "chart",
+        "📋 Tabel ringkasan"         to "tabel",
         "📊 Rangkuman bulan ini"      to "rangkuman",
         "🤔 Aku boros nggak?"         to "Mai, aku boros nggak bulan ini?",
         "💡 Tips hemat"               to "Mai, kasih tips hemat dong"
