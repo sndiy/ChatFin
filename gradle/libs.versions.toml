@@ -43,6 +43,11 @@ workManager                 = "2.10.0"
 # Kotlin Serialization
 serialization               = "1.8.0"
 
+# CameraX & ML Kit
+camerax                     = "1.4.1"
+mlkitTextRecognition        = "16.0.1"
+guava                       = "33.4.0-android"
+
 # Testing
 junit                       = "4.13.2"
 junitExt                    = "1.2.1"
@@ -107,6 +112,16 @@ coroutines-android          = { group = "org.jetbrains.kotlinx", name = "kotlinx
 
 # WorkManager
 work-runtime-ktx            = { group = "androidx.work", name = "work-runtime-ktx", version.ref = "workManager" }
+
+# CameraX
+camera-core                 = { group = "androidx.camera", name = "camera-core", version.ref = "camerax" }
+camera-camera2              = { group = "androidx.camera", name = "camera-camera2", version.ref = "camerax" }
+camera-lifecycle            = { group = "androidx.camera", name = "camera-lifecycle", version.ref = "camerax" }
+camera-view                 = { group = "androidx.camera", name = "camera-view", version.ref = "camerax" }
+guava                       = { group = "com.google.guava", name = "guava", version.ref = "guava" }
+
+# ML Kit OCR (Bundled 100% Offline)
+mlkit-text-recognition      = { group = "com.google.mlkit", name = "text-recognition", version.ref = "mlkitTextRecognition" }
 
 # Serialization
 kotlinx-serialization-json  = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "serialization" }

@@ -1,8 +1,4 @@
 // app/src/main/java/com/sndiy/chatfin/feature/finance/transaction/ui/TransactionViewModel.kt
-//
-// PERUBAHAN dari versi sebelumnya:
-// 1. saveTransaction() sekarang pakai updateTransaction() untuk edit (bukan delete+add)
-// 2. Lebih aman: saldo dompet rollback + apply secara atomik
 
 package com.sndiy.chatfin.feature.finance.transaction.ui
 
@@ -10,15 +6,18 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.sndiy.chatfin.core.data.local.entity.CategoryEntity
 import com.sndiy.chatfin.core.data.local.entity.TransactionEntity
+import com.sndiy.chatfin.core.data.local.entity.TransactionItemEntity
 import com.sndiy.chatfin.core.data.local.entity.WalletEntity
 import com.sndiy.chatfin.feature.finance.account.data.repository.AccountRepository
 import com.sndiy.chatfin.feature.finance.transaction.data.repository.CategoryRepository
 import com.sndiy.chatfin.feature.finance.transaction.data.repository.TransactionRepository
 import com.sndiy.chatfin.feature.finance.transaction.data.repository.WalletRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import java.time.LocalTime
 import javax.inject.Inject
@@ -28,20 +27,21 @@ enum class TransactionType(val label: String) {
 }
 
 data class TransactionFormState(
-    val editingId: String?                = null,
-    val type: TransactionType             = TransactionType.EXPENSE,
-    val amount: String                    = "",
-    val selectedCategory: CategoryEntity? = null,
-    val selectedWallet: WalletEntity?     = null,
-    val selectedToWallet: WalletEntity?   = null,
-    val note: String                      = "",
-    val date: LocalDate                   = LocalDate.now(),
-    val time: LocalTime                   = LocalTime.now(),
-    val amountError: String?              = null,
-    val categoryError: String?            = null,
-    val walletError: String?              = null,
-    val isLoading: Boolean                = false,
-    val isSaved: Boolean                  = false
+    val editingId: String?                     = null,
+    val type: TransactionType                  = TransactionType.EXPENSE,
+    val amount: String                         = "",
+    val selectedCategory: CategoryEntity?      = null,
+    val selectedWallet: WalletEntity?          = null,
+    val selectedToWallet: WalletEntity?        = null,
+    val note: String                           = "",
+    val date: LocalDate                        = LocalDate.now(),
+    val time: LocalTime                        = LocalTime.now(),
+    val items: List<TransactionItemEntity>     = emptyList(),
+    val amountError: String?                   = null,
+    val categoryError: String?                 = null,
+    val walletError: String?                   = null,
+    val isLoading: Boolean                     = false,
+    val isSaved: Boolean                       = false
 )
 
 data class DateFilter(
@@ -119,7 +119,6 @@ class TransactionViewModel @Inject constructor(
         }
     }
 
-    // ── Filter tanggal ────────────────────────────────────────────────────────
     fun setDateFilter(startDate: LocalDate?, endDate: LocalDate?) {
         _listState.update { it.copy(dateFilter = DateFilter(startDate = startDate, endDate = endDate)) }
     }
@@ -128,7 +127,6 @@ class TransactionViewModel @Inject constructor(
         _listState.update { it.copy(dateFilter = DateFilter()) }
     }
 
-    // ── Load transaksi untuk diedit ───────────────────────────────────────────
     fun loadForEdit(transaction: TransactionEntity) {
         val state    = _listState.value
         val allCats  = state.expenseCategories + state.incomeCategories
@@ -140,23 +138,29 @@ class TransactionViewModel @Inject constructor(
             "TRANSFER" -> TransactionType.TRANSFER
             else       -> TransactionType.EXPENSE
         }
-        // date/time bisa datang dari sumber tak terpercaya (sync Firestore, backup
-        // JSON yang diedit manual) — jangan biarkan format rusak meng-crash form Edit.
         val safeDate = runCatching { LocalDate.parse(transaction.date) }.getOrDefault(LocalDate.now())
         val safeTime = runCatching { LocalTime.parse(transaction.time) }.getOrDefault(LocalTime.now())
 
-        _formState.update {
-            TransactionFormState(
-                editingId        = transaction.id,
-                type             = type,
-                amount           = transaction.amount.toString(),
-                selectedCategory = category,
-                selectedWallet   = wallet,
-                selectedToWallet = toWallet,
-                note             = transaction.note ?: "",
-                date             = safeDate,
-                time             = safeTime
-            )
+        viewModelScope.launch {
+            val txWithItems = withContext(Dispatchers.IO) {
+                transactionRepo.getTransactionWithItemsById(transaction.id)
+            }
+            val fetchedItems = txWithItems?.items ?: emptyList()
+
+            _formState.update {
+                TransactionFormState(
+                    editingId        = transaction.id,
+                    type             = type,
+                    amount           = transaction.amount.toString(),
+                    selectedCategory = category,
+                    selectedWallet   = wallet,
+                    selectedToWallet = toWallet,
+                    note             = transaction.note ?: "",
+                    date             = safeDate,
+                    time             = safeTime,
+                    items            = fetchedItems
+                )
+            }
         }
     }
 
@@ -196,17 +200,27 @@ class TransactionViewModel @Inject constructor(
         _formState.update { it.copy(time = time) }
     }
 
+    fun onItemsChange(items: List<TransactionItemEntity>) {
+        _formState.update {
+            it.copy(
+                items = items,
+                amount = if (items.isNotEmpty()) items.sumOf { item -> item.price }.toString() else it.amount
+            )
+        }
+    }
+
     fun resetForm() {
         _formState.update { TransactionFormState() }
     }
 
-    // ── UPDATED: saveTransaction — proper edit via updateTransaction ──────────
     fun saveTransaction() {
         val form      = _formState.value
         val accountId = activeAccountId ?: return
         var hasError  = false
 
-        if (form.amount.isBlank() || form.amount.toLongOrNull() == null || form.amount.toLong() <= 0) {
+        val calculatedAmount = if (form.items.isNotEmpty()) form.items.sumOf { it.price } else form.amount.toLongOrNull() ?: 0L
+
+        if (calculatedAmount <= 0) {
             _formState.update { it.copy(amountError = "Nominal tidak valid") }
             hasError = true
         }
@@ -223,39 +237,40 @@ class TransactionViewModel @Inject constructor(
         _formState.update { it.copy(isLoading = true) }
         viewModelScope.launch {
             try {
-                if (form.editingId != null) {
-                    // ── MODE EDIT: pakai updateTransaction (rollback + apply atomik) ──
-                    val old = transactionRepo.getTransactionById(form.editingId)
-                    if (old != null) {
-                        transactionRepo.updateTransaction(
-                            oldTransaction = old,
-                            newType        = form.type.name,
-                            newAmount      = form.amount.toLong(),
-                            newCategoryId  = form.selectedCategory?.id ?: "transfer",
-                            newWalletId    = form.selectedWallet!!.id,
-                            newToWalletId  = form.selectedToWallet?.id,
-                            newNote        = form.note.trim().ifBlank { null },
-                            newDate        = form.date,
-                            newTime        = form.time
+                withContext(Dispatchers.IO) {
+                    if (form.editingId != null) {
+                        val old = transactionRepo.getTransactionById(form.editingId)
+                        if (old != null) {
+                            transactionRepo.updateTransactionWithItems(
+                                oldTransaction = old,
+                                newType        = form.type.name,
+                                newAmount      = calculatedAmount,
+                                newCategoryId  = form.selectedCategory?.id ?: "transfer",
+                                newWalletId    = form.selectedWallet!!.id,
+                                newToWalletId  = form.selectedToWallet?.id,
+                                newNote        = form.note.trim().ifBlank { null },
+                                newDate        = form.date,
+                                newTime        = form.time,
+                                newItems       = form.items
+                            )
+                        }
+                    } else {
+                        transactionRepo.addTransaction(
+                            accountId         = accountId,
+                            type              = form.type.name,
+                            amount            = calculatedAmount,
+                            categoryId        = form.selectedCategory?.id ?: "transfer",
+                            walletId          = form.selectedWallet!!.id,
+                            toWalletId        = form.selectedToWallet?.id,
+                            note              = form.note.trim().ifBlank { null },
+                            date              = form.date,
+                            time              = form.time
                         )
                     }
-                    _formState.update { it.copy(isLoading = false, isSaved = true) }
-                    _listState.update { it.copy(successMessage = "Transaksi diperbarui") }
-                } else {
-                    // ── MODE ADD: seperti biasa ──
-                    transactionRepo.addTransaction(
-                        accountId         = accountId,
-                        type              = form.type.name,
-                        amount            = form.amount.toLong(),
-                        categoryId        = form.selectedCategory?.id ?: "transfer",
-                        walletId          = form.selectedWallet!!.id,
-                        toWalletId        = form.selectedToWallet?.id,
-                        note              = form.note.trim().ifBlank { null },
-                        date              = form.date,
-                        time              = form.time
-                    )
-                    _formState.update { it.copy(isLoading = false, isSaved = true) }
-                    _listState.update { it.copy(successMessage = "Transaksi disimpan") }
+                }
+                _formState.update { it.copy(isLoading = false, isSaved = true) }
+                _listState.update {
+                    it.copy(successMessage = if (form.editingId != null) "Transaksi diperbarui" else "Transaksi disimpan")
                 }
             } catch (e: Exception) {
                 _formState.update { it.copy(isLoading = false) }
@@ -267,7 +282,9 @@ class TransactionViewModel @Inject constructor(
     fun deleteTransaction(transaction: TransactionEntity) {
         viewModelScope.launch {
             try {
-                transactionRepo.deleteTransaction(transaction)
+                withContext(Dispatchers.IO) {
+                    transactionRepo.deleteTransaction(transaction)
+                }
                 _listState.update { it.copy(successMessage = "Transaksi dihapus") }
             } catch (e: Exception) {
                 _listState.update { it.copy(errorMessage = "Gagal menghapus: ${e.message}") }
@@ -278,7 +295,9 @@ class TransactionViewModel @Inject constructor(
     fun deleteWallet(wallet: WalletEntity) {
         viewModelScope.launch {
             try {
-                walletRepo.deleteWallet(wallet)
+                withContext(Dispatchers.IO) {
+                    walletRepo.deleteWallet(wallet)
+                }
                 _listState.update { it.copy(successMessage = "Dompet dihapus") }
             } catch (e: Exception) {
                 _listState.update { it.copy(errorMessage = "Gagal menghapus dompet: ${e.message}") }
@@ -286,25 +305,20 @@ class TransactionViewModel @Inject constructor(
         }
     }
 
-    // -- QuickAdd: simpan transaksi cepat dari bottom sheet --
-    fun quickAdd(
-        type: String,
-        amount: Long,
-        categoryId: String,
-        walletId: String,
-        note: String
-    ) {
+    fun quickAdd(type: String, amount: Long, categoryId: String, walletId: String, note: String) {
         val accountId = activeAccountId ?: return
         viewModelScope.launch {
             try {
-                transactionRepo.addTransaction(
-                    accountId  = accountId,
-                    type       = type,
-                    amount     = amount,
-                    categoryId = categoryId,
-                    walletId   = walletId,
-                    note       = note.ifBlank { null }
-                )
+                withContext(Dispatchers.IO) {
+                    transactionRepo.addTransaction(
+                        accountId = accountId,
+                        type = type,
+                        amount = amount,
+                        categoryId = categoryId,
+                        walletId = walletId,
+                        note = note.ifBlank { null }
+                    )
+                }
                 _listState.update { it.copy(successMessage = "Transaksi disimpan") }
             } catch (e: Exception) {
                 _listState.update { it.copy(errorMessage = "Gagal menyimpan: ${e.message}") }

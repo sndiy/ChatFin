@@ -173,33 +173,6 @@ class TransactionRepository @Inject constructor(
         newDate: LocalDate,
         newTime: LocalTime
     ) {
-        updateTransactionWithItems(
-            oldTransaction = oldTransaction,
-            newType = newType,
-            newAmount = newAmount,
-            newCategoryId = newCategoryId,
-            newWalletId = newWalletId,
-            newToWalletId = newToWalletId,
-            newNote = newNote,
-            newDate = newDate,
-            newTime = newTime,
-            newItems = emptyList()
-        )
-    }
-
-    // ── Update transaksi beserta list rincian item (OCR) ─────────────────────
-    suspend fun updateTransactionWithItems(
-        oldTransaction: TransactionEntity,
-        newType: String,
-        newAmount: Long,
-        newCategoryId: String,
-        newWalletId: String,
-        newToWalletId: String? = null,
-        newNote: String? = null,
-        newDate: LocalDate,
-        newTime: LocalTime,
-        newItems: List<TransactionItemEntity> = emptyList()
-    ) {
         db.withTransaction {
             rollbackBalanceEffect(
                 oldTransaction.type,
@@ -219,16 +192,6 @@ class TransactionRepository @Inject constructor(
                 time       = newTime.format(timeFormatter)
             )
             transactionDao.updateTransaction(updated)
-
-            // Re-insert items
-            transactionDao.deleteTransactionItemsByTransactionId(oldTransaction.id)
-            if (newItems.isNotEmpty()) {
-                val prepared = newItems.filter { it.name.isNotBlank() }.map {
-                    if (it.transactionId.isBlank()) it.copy(transactionId = oldTransaction.id) else it
-                }
-                transactionDao.insertTransactionItems(prepared)
-            }
-
             applyBalanceEffect(newType, newWalletId, newToWalletId, newAmount)
         }
     }

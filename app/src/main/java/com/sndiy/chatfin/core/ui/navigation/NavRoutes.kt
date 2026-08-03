@@ -25,6 +25,7 @@ sealed class Screen(val route: String) {
 
     data object CategoryList    : Screen("category_list")
     data object TransactionForm : Screen("transaction_form")
+    data object ReceiptScanner  : Screen("receipt_scanner")
     data object BudgetList      : Screen("budget_list")
     data object Export          : Screen("export")
 

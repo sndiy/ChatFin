@@ -24,9 +24,9 @@ android {
         // sementara nilai di sini masih 1.0.0. Sekarang file ini jadi satu-satunya
         // sumber kebenaran — AboutScreen/SettingsScreen membacanya lewat
         // BuildConfig.VERSION_NAME.
-        // 2.5.0: AI chat transaction recording fixes, WhatsApp-style auto-backup, bi-directional smart sync fix, and enhanced marquee transaction UI.
-        versionCode     = 3
-        versionName     = "2.5.0"
+        // 2.6.0: Adaptive OCR multilingual receipt parser, Tap-First UI with Numpad & DatePicker/TimePicker, and default custom notes.
+        versionCode     = 4
+        versionName     = "2.6.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -136,6 +136,14 @@ dependencies {
     implementation(libs.coroutines.android)
     implementation(libs.work.runtime.ktx)
     implementation(libs.kotlinx.serialization.json)
+
+    implementation(libs.camera.core)
+    implementation(libs.camera.camera2)
+    implementation(libs.camera.lifecycle)
+    implementation(libs.camera.view)
+    implementation(libs.guava)
+
+    implementation(libs.mlkit.text.recognition)
 
     testImplementation(libs.junit)
     testImplementation(libs.coroutines.test)

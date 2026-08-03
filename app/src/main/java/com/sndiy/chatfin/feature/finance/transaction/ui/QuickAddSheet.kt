@@ -7,10 +7,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -18,10 +18,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -30,10 +27,20 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.sndiy.chatfin.core.data.local.entity.CategoryEntity
 import com.sndiy.chatfin.core.data.local.entity.WalletEntity
+import com.sndiy.chatfin.core.ui.component.NumpadAmountDisplay
+import com.sndiy.chatfin.core.ui.component.NumpadKeyboard
+import com.sndiy.chatfin.core.ui.component.NumpadPresetChips
 import com.sndiy.chatfin.core.ui.theme.ExpenseRed
 import com.sndiy.chatfin.core.ui.theme.IncomeGreen
 import java.text.NumberFormat
 import java.util.Locale
+
+// Preset catatan yang bisa ditap langsung
+private val notePresets = listOf(
+    "Makan", "Minum", "Kopi", "Belanja", "Bensin",
+    "Parkir", "Transportasi", "Listrik", "Air", "Internet",
+    "Hiburan", "Kesehatan", "Gaji", "Bonus", "Lainnya"
+)
 
 data class QuickAddResult(
     val type: String,       // INCOME | EXPENSE
@@ -53,38 +60,47 @@ fun QuickAddSheet(
     onDismiss: () -> Unit,
     onFullForm: () -> Unit
 ) {
-    val fmt             = NumberFormat.getNumberInstance(Locale("id", "ID"))
-    val focusRequester  = remember { FocusRequester() }
-    val keyboard        = LocalSoftwareKeyboardController.current
+    val fmt             = remember { NumberFormat.getNumberInstance(Locale("id", "ID")) }
+    val scrollState     = rememberScrollState()
 
     var isExpense         by remember { mutableStateOf(true) }
-    var amount            by remember { mutableStateOf("") }
+    var rawDigits         by remember { mutableStateOf("") }      // digit murni tanpa separator
     var selectedCategory  by remember { mutableStateOf<CategoryEntity?>(null) }
     var selectedWallet    by remember { mutableStateOf(wallets.firstOrNull()) }
-    var note              by remember { mutableStateOf("") }
+    var selectedNote      by remember { mutableStateOf("") }       // catatan dari chip preset
+    var showCustomNote    by remember { mutableStateOf(true) }     // otomatis aktifkan opsi 'Lainnya' / custom note
+    var customNoteText    by remember { mutableStateOf("") }
     var amountError       by remember { mutableStateOf(false) }
 
     val categories = if (isExpense) expenseCategories else incomeCategories
 
-    // Auto-select first category
-    LaunchedEffect(isExpense) {
-        selectedCategory = categories.firstOrNull()
+    // Format tampilan nominal
+    val formattedAmount = remember(rawDigits) {
+        val num = rawDigits.toLongOrNull()
+        if (num != null && num > 0) fmt.format(num) else rawDigits.ifBlank { "" }
     }
 
-    // Auto-focus amount
-    LaunchedEffect(Unit) {
-        focusRequester.requestFocus()
+    // Auto-select first category when type changes
+    LaunchedEffect(isExpense) {
+        selectedCategory = categories.firstOrNull()
+        selectedNote = ""
+        showCustomNote = true
+        customNoteText = ""
     }
 
     ModalBottomSheet(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { onDismiss() },
         sheetState       = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ) {
         Column(
-            modifier            = Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 32.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            modifier            = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 32.dp)
+                .verticalScroll(scrollState),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            // Header
+            // ── Header ──────────────────────────────────────────────────────────
             Row(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -98,7 +114,7 @@ fun QuickAddSheet(
                 }
             }
 
-            // Type toggle
+            // ── Tipe toggle: Pengeluaran / Pemasukan ─────────────────────────
             Row(
                 modifier              = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -110,7 +126,7 @@ fun QuickAddSheet(
                 ) {
                     Text(
                         "Pengeluaran",
-                        modifier   = Modifier.padding(vertical = 10.dp),
+                        modifier   = Modifier.padding(vertical = 12.dp),
                         textAlign  = TextAlign.Center,
                         style      = MaterialTheme.typography.labelLarge,
                         color      = if (isExpense) ExpenseRed else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -124,7 +140,7 @@ fun QuickAddSheet(
                 ) {
                     Text(
                         "Pemasukan",
-                        modifier   = Modifier.padding(vertical = 10.dp),
+                        modifier   = Modifier.padding(vertical = 12.dp),
                         textAlign  = TextAlign.Center,
                         style      = MaterialTheme.typography.labelLarge,
                         color      = if (!isExpense) IncomeGreen else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -133,33 +149,40 @@ fun QuickAddSheet(
                 }
             }
 
-            // Amount input
-            OutlinedTextField(
-                value           = amount,
-                onValueChange   = { amount = it.filter { c -> c.isDigit() }; amountError = false },
-                label           = { Text("Nominal") },
-                prefix          = { Text("Rp ") },
-                isError         = amountError,
-                supportingText  = if (amountError) { { Text("Isi nominal") } } else null,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
-                keyboardActions = KeyboardActions(onDone = { keyboard?.hide() }),
-                singleLine      = true,
-                modifier        = Modifier.fillMaxWidth().focusRequester(focusRequester)
+            // ── Display nominal (read-only, diisi oleh numpad di bawah) ──────
+            NumpadAmountDisplay(
+                formattedAmount = formattedAmount,
+                currencyPrefix  = "Rp",
+                error           = if (amountError) "Masukkan nominal terlebih dahulu" else null
             )
 
-            // Quick amount chips
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                val presets = listOf(5_000L, 10_000L, 20_000L, 50_000L, 100_000L)
-                items(presets) { preset ->
-                    FilterChip(
-                        selected = amount == preset.toString(),
-                        onClick  = { amount = preset.toString(); amountError = false },
-                        label    = { Text(if (preset >= 100_000) "${preset/1000}rb" else "${fmt.format(preset)}") }
-                    )
+            // ── Preset nominal chip ──────────────────────────────────────────
+            NumpadPresetChips(
+                presets     = listOf(5_000L, 10_000L, 20_000L, 50_000L, 100_000L, 200_000L),
+                currentRaw  = rawDigits,
+                onSelect    = { preset ->
+                    rawDigits = preset.toString()
+                    amountError = false
                 }
-            }
+            )
 
-            // Category selector
+            // ── Numpad Visual ────────────────────────────────────────────────
+            NumpadKeyboard(
+                rawDigits   = rawDigits,
+                onDigit     = { key ->
+                    rawDigits = (rawDigits + key).trimStart('0').take(12).ifBlank { key }
+                    amountError = false
+                },
+                onBackspace = {
+                    if (rawDigits.isNotEmpty()) rawDigits = rawDigits.dropLast(1)
+                },
+                onClear     = { rawDigits = "" },
+                buttonSize  = 68.dp
+            )
+
+            HorizontalDivider()
+
+            // ── Kategori chip ─────────────────────────────────────────────────
             Text("Kategori", style = MaterialTheme.typography.labelMedium)
             LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 items(categories) { cat ->
@@ -179,7 +202,7 @@ fun QuickAddSheet(
                 }
             }
 
-            // Wallet selector (hanya kalau lebih dari 1)
+            // ── Dompet chip (jika lebih dari 1) ──────────────────────────────
             if (wallets.size > 1) {
                 Text("Dompet", style = MaterialTheme.typography.labelMedium)
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -193,19 +216,54 @@ fun QuickAddSheet(
                 }
             }
 
-            // Note (optional, collapsed)
-            OutlinedTextField(
-                value         = note,
-                onValueChange = { note = it },
-                label         = { Text("Catatan (opsional)") },
-                singleLine    = true,
-                modifier      = Modifier.fillMaxWidth()
-            )
+            // ── Catatan — Chip Preset (tap) ───────────────────────────────────
+            Text("Catatan (opsional)", style = MaterialTheme.typography.labelMedium)
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                items(notePresets) { preset ->
+                    val isSelected = if (preset == "Lainnya") showCustomNote else (selectedNote == preset && !showCustomNote)
+                    FilterChip(
+                        selected = isSelected,
+                        onClick  = {
+                            if (preset == "Lainnya") {
+                                showCustomNote = true
+                                selectedNote = ""
+                            } else {
+                                selectedNote = if (isSelected) "" else preset
+                                showCustomNote = false
+                                customNoteText = ""
+                            }
+                        },
+                        label    = { Text(preset) },
+                        leadingIcon = if (isSelected) {
+                            { Icon(Icons.Default.Check, null, Modifier.size(14.dp)) }
+                        } else null
+                    )
+                }
+            }
 
-            // Save button
+            // TextField muncul hanya jika user tap "Lainnya"
+            if (showCustomNote) {
+                OutlinedTextField(
+                    value           = customNoteText,
+                    onValueChange   = { customNoteText = it },
+                    label           = { Text("Catatan custom") },
+                    leadingIcon     = { Icon(Icons.Default.Edit, null) },
+                    trailingIcon    = {
+                        if (customNoteText.isNotEmpty()) {
+                            IconButton(onClick = { customNoteText = "" }) {
+                                Icon(Icons.Default.Clear, null)
+                            }
+                        }
+                    },
+                    singleLine      = true,
+                    modifier        = Modifier.fillMaxWidth()
+                )
+            }
+
+            // ── Tombol Simpan ────────────────────────────────────────────────
             Button(
                 onClick = {
-                    val parsedAmount = amount.toLongOrNull()
+                    val parsedAmount = rawDigits.toLongOrNull()
                     if (parsedAmount == null || parsedAmount <= 0) {
                         amountError = true
                         return@Button
@@ -213,12 +271,18 @@ fun QuickAddSheet(
                     val cat = selectedCategory ?: return@Button
                     val wal = selectedWallet ?: return@Button
 
+                    val finalNote = when {
+                        showCustomNote -> customNoteText.trim()
+                        selectedNote.isNotBlank() -> selectedNote
+                        else -> ""
+                    }
+
                     onSave(QuickAddResult(
                         type       = if (isExpense) "EXPENSE" else "INCOME",
                         amount     = parsedAmount,
                         categoryId = cat.id,
                         walletId   = wal.id,
-                        note       = note.trim()
+                        note       = finalNote
                     ))
                 },
                 modifier = Modifier.fillMaxWidth().height(52.dp)

@@ -11,12 +11,13 @@ import com.sndiy.chatfin.core.data.local.entity.*
         WalletEntity::class,
         CategoryEntity::class,
         TransactionEntity::class,
+        TransactionItemEntity::class,
         BudgetEntity::class,
         ChatSessionEntity::class,
         ChatMessageEntity::class,
         CategoryKeywordEntity::class,
     ],
-    version = 6,
+    version = 7,
     exportSchema = true
 )
 abstract class ChatFinDatabase : RoomDatabase() {
