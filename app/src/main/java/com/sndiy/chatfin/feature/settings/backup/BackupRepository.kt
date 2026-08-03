@@ -100,6 +100,36 @@ class BackupRepository @Inject constructor(
         }
     }
 
+    suspend fun createAutoBackup(): Result<String> = withContext(Dispatchers.IO) {
+        try {
+            val accounts     = accountDao.getAllAccounts().first()
+            val wallets      = accounts.flatMap { walletDao.getWalletsByAccount(it.id).first() }
+            val categories   = accounts.flatMap {
+                categoryDao.getCategoriesByAccountAndType(it.id, "EXPENSE").first() +
+                        categoryDao.getCategoriesByAccountAndType(it.id, "INCOME").first()
+            }.distinctBy { it.id }
+            val transactions = accounts.flatMap { transactionDao.getTransactionsByAccount(it.id).first() }
+
+            val backup = BackupData(
+                version      = 1,
+                exportedAt   = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")),
+                accounts     = accounts,
+                wallets      = wallets,
+                categories   = categories,
+                transactions = transactions
+            )
+
+            val json = jsonFormatter.encodeToString(backup)
+            val backupDir = java.io.File(context.filesDir, "auto_backups").apply { if (!exists()) mkdirs() }
+            val file = java.io.File(backupDir, "auto_backup_latest.json")
+            file.writeText(json)
+
+            Result.success("Auto backup berhasil: ${transactions.size} transaksi")
+        } catch (e: Exception) {
+            Result.failure(Exception("Auto backup gagal: ${e.message}"))
+        }
+    }
+
     fun generateFileName(): String {
         val timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"))
         return "chatfin_backup_$timestamp.json"

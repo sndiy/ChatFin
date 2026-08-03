@@ -27,6 +27,13 @@ class GeminiClient @Inject constructor(
         android.util.Log.d("GeminiClient", "Rotate ke model: ${models[currentModelIndex]}")
     }
 
+    fun resetToPrimary() {
+        if (currentModelIndex != 0) {
+            currentModelIndex = 0
+            android.util.Log.d("GeminiClient", "Reset ke primary: ${models[0]}")
+        }
+    }
+
     // Satu-satunya sumber API key yang sah: input user lewat Setelan → API Key,
     // disimpan di SecureStorage (EncryptedSharedPreferences). Tidak ada lagi
     // fallback ke BuildConfig — key bawaan developer di BuildConfig TIDAK

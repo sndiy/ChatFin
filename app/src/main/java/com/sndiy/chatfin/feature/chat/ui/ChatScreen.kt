@@ -54,7 +54,7 @@ private fun ChatScreenContent(
     val listState = rememberLazyListState()
     var showClearDialog by remember { mutableStateOf(false) }
 
-    LaunchedEffect(uiState.messages.size) {
+    LaunchedEffect(uiState.messages.size, uiState.messages.lastOrNull()?.id) {
         if (uiState.messages.isNotEmpty()) {
             // Small delay so the new item is laid out before scrolling
             delay(50)

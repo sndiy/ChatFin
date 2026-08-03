@@ -23,10 +23,8 @@ class GeminiRepository @Inject constructor(
             android.util.Log.d("GeminiRepo", "OK dengan ${client.currentModelName} (${rawText.length} char)")
             // Setelah sukses, kembalikan ke primary
             Result.success(parser.parse(rawText)).also {
-                // Reset ke primary kalau sedang di fallback
-                if (client.currentModelName != "gemini-2.5-flash") {
-                    client.rotateModel() // rotate balik ke primary
-                }
+                // Setelah sukses, pastikan kembali ke primary
+                client.resetToPrimary()
             }
         } catch (e: Exception) {
             when {

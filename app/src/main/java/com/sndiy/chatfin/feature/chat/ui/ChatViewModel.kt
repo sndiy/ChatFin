@@ -97,6 +97,12 @@ class ChatViewModel @Inject constructor(
     private val chatRepo: ChatRepository
 ) : ViewModel() {
 
+    companion object {
+        /** Maks pasangan (role, text) yang disimpan di chatHistory in-memory.
+         *  Mencegah token API membengkak tanpa batas. */
+        private const val MAX_CHAT_HISTORY = 30
+    }
+
     private val _uiState = MutableStateFlow(ChatUiState())
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
 
@@ -157,6 +163,14 @@ class ChatViewModel @Inject constructor(
                         )
                     }
                     _uiState.update { it.copy(messages = persisted) }
+
+                    // Rebuild chatHistory dari pesan yang dipersist supaya AI
+                    // tidak kehilangan konteks percakapan setelah app restart.
+                    chatHistory.clear()
+                    persisted
+                        .filter { !it.isError && it.text.isNotBlank() }
+                        .takeLast(MAX_CHAT_HISTORY)
+                        .forEach { msg -> chatHistory.add(msg.role to msg.text) }
                 }
         }
     }
@@ -365,6 +379,13 @@ class ChatViewModel @Inject constructor(
         val text = _uiState.value.inputText.trim()
         if (text.isBlank() || _uiState.value.isTyping) return
 
+        // Clear pending transaction & options dari pesan sebelumnya — mencegah
+        // kartu konfirmasi zombie saat user langsung kirim pesan baru.
+        if (_uiState.value.pendingTransaction != null) {
+            _uiState.update { it.copy(pendingTransaction = null) }
+            clearAllOptions()
+        }
+
         addMessage(UiMessage(role = "user", text = text))
         _uiState.update { it.copy(inputText = "") }
         routeMessage(text)
@@ -379,20 +400,10 @@ class ChatViewModel @Inject constructor(
         routeMessage(text)
     }
 
-    // ── Routing pesan: wizard aktif → command bot → parser → AI ─────────────
-    // Parser-first (M7): TransactionParser (murni, teruji, lihat core/parser/)
-    // menggantikan isTransactionIntent() yang lama (daftar kata kunci rapuh).
-    // Urutan gate SENGAJA begini, bukan langsung ke parser:
-    //  1. Wizard bot yang sedang berjalan (WaitCategory dst) harus dilanjutkan
-    //     dulu, apa pun isi pesannya — bukan di-reparse dari awal.
-    //  2. Offline: semua pesan lewat bot mode (tidak ada AI untuk ditanya),
-    //     sama seperti sebelum M7.
-    //  3. Command bot literal (help/setor/tarik/saldo/rangkuman) BUKAN kalimat
-    //     natural — harus tetap dikenali persis seperti sebelumnya walau tanpa
-    //     nominal (mis. "tarik" saja), yang tidak akan pernah dikenali parser
-    //     sebagai transaksi (tidak ada digit).
-    //  4. Baru di sini TransactionParser menentukan: kalimat transaksi (skip
-    //     pertanyaan yang jawabannya sudah ketemu) vs bukan (lempar ke AI).
+    // ── Routing pesan ────────────────────────────────────────────────────────
+    // 1. Wizard bot aktif → lanjutkan. 2. Offline → bot mode.
+    // 3. Bot mode manual → TransactionParser + commands.
+    // 4. Online + AI → kirim SEMUA ke AI (AI mengenali transaksi sendiri).
     private fun routeMessage(text: String) {
         if (botStep !is BotStep.Idle) {
             handleBotMode(text)
@@ -405,16 +416,23 @@ class ChatViewModel @Inject constructor(
             return
         }
 
-        if (isBotCommand(text)) {
-            handleBotMode(text)
+        if (_uiState.value.isBotMode) {
+            // User sedang di bot mode manual (tekan "Pakai Bot") — tetap
+            // gunakan TransactionParser + bot commands.
+            if (isBotCommand(text)) {
+                handleBotMode(text)
+                return
+            }
+            when (val parsed = TransactionParser.parse(text, keywordSource)) {
+                is ParseResult.Complete -> handleParsedTransaction(parsed.draft)
+                is ParseResult.Partial  -> handleParsedTransaction(parsed.draft)
+                ParseResult.NotATransaction -> handleBotMode(text)
+            }
             return
         }
 
-        when (val parsed = TransactionParser.parse(text, keywordSource)) {
-            is ParseResult.Complete -> handleParsedTransaction(parsed.draft)
-            is ParseResult.Partial  -> handleParsedTransaction(parsed.draft)
-            ParseResult.NotATransaction -> sendToAi(text)
-        }
+        // Online + AI tersedia: kirim SEMUA ke AI.
+        sendToAi(text)
     }
 
     private fun handleParsedTransaction(draft: ParsedDraft) {
@@ -476,6 +494,8 @@ class ChatViewModel @Inject constructor(
                     aiRetryCount = 0
                     chatHistory.add("user" to text)
                     chatHistory.add("model" to parsed.text)
+                    // Trim agar token API tidak membengkak tanpa batas
+                    while (chatHistory.size > MAX_CHAT_HISTORY) chatHistory.removeFirst()
                     _uiState.update {
                         it.copy(
                             connectionStatus = ConnectionStatus.CONNECTED,
@@ -707,16 +727,17 @@ class ChatViewModel @Inject constructor(
         }
         addMessage(UiMessage(role = "user", text = selectedValue))
 
-        val isTransactionOption = option is ChatOption.CategoryOptions ||
-                option is ChatOption.WalletOptions   ||
-                option is ChatOption.TransactionConfirm
-
-        if (isTransactionOption || botStep !is BotStep.Idle) {
+        // Bot wizard sedang berjalan (WaitCategory/WaitWallet/dll) → lanjutkan
+        // step wizard, apa pun jenis option-nya.
+        if (botStep !is BotStep.Idle) {
             handleBotMode(selectedValue)
             return
         }
 
-        sendToAi(selectedValue)
+        // Tidak ada wizard aktif → routing normal:
+        // - Online + AI mode: kirim pilihan ke AI (AI lanjut ke step berikutnya)
+        // - Bot mode / offline: TransactionParser + bot commands
+        routeMessage(selectedValue)
     }
 
     // ── Konfirmasi transaksi ──────────────────────────────────────────────────
