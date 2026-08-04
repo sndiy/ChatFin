@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.sndiy.chatfin.feature.auth.ui.AuthViewModel
+import com.sndiy.chatfin.feature.auth.ui.SyncConfirmType
 import com.sndiy.chatfin.feature.auth.ui.SyncState
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -178,7 +179,7 @@ fun DataBackupScreen(
                     buttonLabel = "Upload Sekarang",
                     buttonIcon  = Icons.Default.CloudUpload,
                     enabled     = !isSyncing && !backupState.isLoading,
-                    onClick     = { authViewModel.syncUpload() }
+                    onClick     = { authViewModel.requestSyncUploadConfirm() }
                 )
                 DataActionCard(
                     icon        = Icons.Default.CloudDownload,
@@ -187,7 +188,7 @@ fun DataBackupScreen(
                     buttonLabel = "Download Sekarang",
                     buttonIcon  = Icons.Default.CloudDownload,
                     enabled     = !isSyncing && !backupState.isLoading,
-                    onClick     = { authViewModel.syncDownload() }
+                    onClick     = { authViewModel.requestSyncDownloadConfirm() }
                 )
 
                 // Logout
@@ -331,6 +332,112 @@ fun DataBackupScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showLogoutDialog = false }) { Text("Batal") }
+            }
+        )
+    }
+
+    // ── Dialog Konfirmasi: Upload Destruktif ────────────────────────────────
+    if (authState.pendingSyncConfirm is SyncConfirmType.Upload) {
+        val count = authState.syncDataCount
+        AlertDialog(
+            onDismissRequest = { authViewModel.dismissSyncConfirm() },
+            icon  = { Icon(Icons.Default.Warning, null, tint = MaterialTheme.colorScheme.error) },
+            title = { Text("Timpa Data Cloud?", fontWeight = FontWeight.Bold) },
+            text  = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "Ini akan MENIMPA seluruh data di cloud dengan data di HP ini. " +
+                        "Data cloud yang berbeda akan hilang.",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    if (count != null) {
+                        HorizontalDivider()
+                        Text(
+                            "📱 HP ini: ${count.local} transaksi",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            "☁️ Cloud: ${count.cloud} transaksi — akan ditimpa",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    } else {
+                        CircularProgressIndicator(
+                            modifier    = Modifier.size(16.dp),
+                            strokeWidth = 2.dp
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { authViewModel.syncUpload() },
+                    colors  = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor   = MaterialTheme.colorScheme.onError
+                    )
+                ) {
+                    Text("Ya, Timpa Data Cloud")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { authViewModel.dismissSyncConfirm() }) {
+                    Text("Batal", fontWeight = FontWeight.SemiBold)
+                }
+            }
+        )
+    }
+
+    // ── Dialog Konfirmasi: Download Destruktif ─────────────────────────────
+    if (authState.pendingSyncConfirm is SyncConfirmType.Download) {
+        val count = authState.syncDataCount
+        AlertDialog(
+            onDismissRequest = { authViewModel.dismissSyncConfirm() },
+            icon  = { Icon(Icons.Default.Warning, null, tint = MaterialTheme.colorScheme.error) },
+            title = { Text("Timpa Data di HP?", fontWeight = FontWeight.Bold) },
+            text  = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "Ini akan MENIMPA seluruh data di HP ini dengan data dari cloud. " +
+                        "Perubahan lokal yang belum ter-upload akan hilang.",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    if (count != null) {
+                        HorizontalDivider()
+                        Text(
+                            "📱 HP ini: ${count.local} transaksi — akan ditimpa",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                        Text(
+                            "☁️ Cloud: ${count.cloud} transaksi",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    } else {
+                        CircularProgressIndicator(
+                            modifier    = Modifier.size(16.dp),
+                            strokeWidth = 2.dp
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { authViewModel.syncDownload() },
+                    colors  = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor   = MaterialTheme.colorScheme.onError
+                    )
+                ) {
+                    Text("Ya, Timpa Data HP")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { authViewModel.dismissSyncConfirm() }) {
+                    Text("Batal", fontWeight = FontWeight.SemiBold)
+                }
             }
         )
     }

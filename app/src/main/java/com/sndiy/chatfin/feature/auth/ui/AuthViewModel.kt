@@ -6,6 +6,7 @@
 // 3. Register new user: uploadAll (data lokal → cloud)
 // 4. syncDownload manual: pakai mergeDownload by default
 // 5. Tambah fullReplace option hanya jika user explicitly minta
+// 6. Wajib konfirmasi sebelum syncUpload/syncDownload (destruktif) — tidak ada "jangan tanya lagi"
 
 package com.sndiy.chatfin.feature.auth.ui
 
@@ -36,16 +37,31 @@ sealed class SyncState {
     data class Error(val message: String) : SyncState()
 }
 
+/** Jenis konfirmasi destruktif yang sedang menunggu persetujuan user. */
+sealed class SyncConfirmType {
+    /** Upload: data lokal menimpa cloud. */
+    object Upload   : SyncConfirmType()
+    /** Download: data cloud menimpa lokal (merge, tapi bisa timpa dokumen yang sama). */
+    object Download : SyncConfirmType()
+}
+
+/** Ringkasan jumlah data lokal vs cloud untuk ditampilkan di dialog konfirmasi. */
+data class SyncDataCount(val local: Int, val cloud: Int)
+
 data class AuthUiState(
-    val currentUser: FirebaseUser? = null,
-    val email: String              = "",
-    val password: String           = "",
-    val confirmPassword: String    = "",
-    val isRegisterMode: Boolean    = false,
-    val emailError: String?        = null,
-    val passwordError: String?     = null,
-    val authState: AuthState       = AuthState.Idle,
-    val syncState: SyncState       = SyncState.Idle
+    val currentUser: FirebaseUser?       = null,
+    val email: String                    = "",
+    val password: String                 = "",
+    val confirmPassword: String          = "",
+    val isRegisterMode: Boolean          = false,
+    val emailError: String?              = null,
+    val passwordError: String?           = null,
+    val authState: AuthState             = AuthState.Idle,
+    val syncState: SyncState             = SyncState.Idle,
+    /** Non-null = dialog konfirmasi destruktif harus ditampilkan. */
+    val pendingSyncConfirm: SyncConfirmType? = null,
+    /** Ringkasan data untuk dialog konfirmasi; null = sedang dimuat. */
+    val syncDataCount: SyncDataCount?    = null
 )
 
 @HiltViewModel
@@ -142,9 +158,13 @@ class AuthViewModel @Inject constructor(
 
     // ── Manual sync: Smart Bi-directional Sync (Upload + Merge Download) ─────
     fun syncSmart() {
-        val uid = authRepo.currentUser?.uid ?: return
         _uiState.update { it.copy(syncState = SyncState.Syncing) }
         viewModelScope.launch {
+            val uid = resolveUid()
+            if (uid == null) {
+                _uiState.update { it.copy(syncState = SyncState.Error("Sesi login sudah habis. Silakan login ulang.")) }
+                return@launch
+            }
             // Step 1: Upload data lokal baru ke cloud
             val uploadRes = syncRepo.uploadAll(uid)
             // Step 2: Merge data cloud ke lokal
@@ -162,11 +182,58 @@ class AuthViewModel @Inject constructor(
         }
     }
 
-    // ── Manual sync: Upload lokal → cloud ────────────────────────────────────
-    fun syncUpload() {
-        val uid = authRepo.currentUser?.uid ?: return
-        _uiState.update { it.copy(syncState = SyncState.Syncing) }
+    // ── Konfirmasi wajib: tampilkan dialog sebelum Upload destruktif ──────────
+    // Ambil ringkasan data dulu (lokal vs cloud), simpan di state.
+    // Dialog konfirmasi muncul di UI; syncUpload() dipanggil HANYA setelah user konfirmasi.
+    fun requestSyncUploadConfirm() {
         viewModelScope.launch {
+            val uid = resolveUid()
+            if (uid == null) {
+                _uiState.update { it.copy(syncState = SyncState.Error("Sesi login sudah habis. Silakan login ulang.")) }
+                return@launch
+            }
+            // Set dialog pending; count = null → UI tahu data sedang dimuat
+            _uiState.update { it.copy(pendingSyncConfirm = SyncConfirmType.Upload, syncDataCount = null) }
+            // Ambil ringkasan data (non-blocking terhadap UI karena di coroutine)
+            val count = try {
+                val raw = syncRepo.compareDataCount(uid)
+                SyncDataCount(local = raw.local, cloud = raw.cloud)
+            } catch (_: Exception) { null }
+            _uiState.update { it.copy(syncDataCount = count) }
+        }
+    }
+
+    // ── Konfirmasi wajib: tampilkan dialog sebelum Download destruktif ────────
+    fun requestSyncDownloadConfirm() {
+        viewModelScope.launch {
+            val uid = resolveUid()
+            if (uid == null) {
+                _uiState.update { it.copy(syncState = SyncState.Error("Sesi login sudah habis. Silakan login ulang.")) }
+                return@launch
+            }
+            _uiState.update { it.copy(pendingSyncConfirm = SyncConfirmType.Download, syncDataCount = null) }
+            val count = try {
+                val raw = syncRepo.compareDataCount(uid)
+                SyncDataCount(local = raw.local, cloud = raw.cloud)
+            } catch (_: Exception) { null }
+            _uiState.update { it.copy(syncDataCount = count) }
+        }
+    }
+
+    /** Tutup dialog konfirmasi tanpa melakukan apa pun (tombol Batal). */
+    fun dismissSyncConfirm() =
+        _uiState.update { it.copy(pendingSyncConfirm = null, syncDataCount = null) }
+
+    // ── Manual sync: Upload lokal → cloud ────────────────────────────────────
+    // Hanya dipanggil SETELAH user mengkonfirmasi dialog (dari DataBackupScreen).
+    fun syncUpload() {
+        _uiState.update { it.copy(pendingSyncConfirm = null, syncDataCount = null, syncState = SyncState.Syncing) }
+        viewModelScope.launch {
+            val uid = resolveUid()
+            if (uid == null) {
+                _uiState.update { it.copy(syncState = SyncState.Error("Sesi login sudah habis. Silakan login ulang.")) }
+                return@launch
+            }
             syncRepo.uploadAll(uid).fold(
                 onSuccess = { stats ->
                     _uiState.update { it.copy(syncState = SyncState.Done(stats)) }
@@ -180,10 +247,15 @@ class AuthViewModel @Inject constructor(
     }
 
     // ── Manual sync: Download cloud → lokal (MERGE, tidak hapus data lokal) ──
+    // Hanya dipanggil SETELAH user mengkonfirmasi dialog (dari DataBackupScreen).
     fun syncDownload() {
-        val uid = authRepo.currentUser?.uid ?: return
-        _uiState.update { it.copy(syncState = SyncState.Syncing) }
+        _uiState.update { it.copy(pendingSyncConfirm = null, syncDataCount = null, syncState = SyncState.Syncing) }
         viewModelScope.launch {
+            val uid = resolveUid()
+            if (uid == null) {
+                _uiState.update { it.copy(syncState = SyncState.Error("Sesi login sudah habis. Silakan login ulang.")) }
+                return@launch
+            }
             // FIX: Pakai mergeDownload, bukan downloadAll
             syncRepo.mergeDownload(uid).fold(
                 onSuccess = { stats ->
@@ -199,6 +271,27 @@ class AuthViewModel @Inject constructor(
     }
 
     fun clearSyncState() = _uiState.update { it.copy(syncState = SyncState.Idle) }
+
+    // ── Helper: tunggu Firebase Auth restore cached user (race condition guard) ──
+    // Firebase Auth memulihkan sesi dari disk secara async saat cold start.
+    // Selama jendela itu (~100-500ms), auth.currentUser == null meskipun user
+    // sebenarnya sudah login. Fungsi ini menunggu sampai 2 detik sebelum
+    // menyimpulkan user benar-benar tidak login.
+    private suspend fun resolveUid(): String? {
+        // Fast path — sudah tersedia
+        authRepo.currentUser?.uid?.let { return it }
+
+        // Slow path — tunggu auth state settle (maks 2 detik)
+        return try {
+            kotlinx.coroutines.withTimeoutOrNull(2_000L) {
+                authRepo.authState
+                    .mapNotNull { it?.uid }
+                    .first()
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
 
     // ── FIX: Smart sync setelah login ────────────────────────────────────────
     private suspend fun syncAfterLogin(uid: String, isNewUser: Boolean) {

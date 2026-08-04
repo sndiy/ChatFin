@@ -24,6 +24,7 @@ import com.sndiy.chatfin.core.data.local.entity.CategoryEntity
 import com.sndiy.chatfin.core.data.local.entity.WalletEntity
 import com.sndiy.chatfin.core.ocr.ParsedReceipt
 import com.sndiy.chatfin.core.ocr.ParsedReceiptItem
+import com.sndiy.chatfin.core.ui.util.RupiahVisualTransformation
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import java.text.NumberFormat
@@ -312,7 +313,6 @@ fun ReceiptEditDialog(
                         )
                     } else {
                         items.forEachIndexed { index, item ->
-                            val itemPriceFormatted = if (item.price > 0L) rupiahFmt.format(item.price) else ""
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -331,13 +331,16 @@ fun ReceiptEditDialog(
                                 )
 
                                 OutlinedTextField(
-                                    value = itemPriceFormatted,
+                                    // Simpan raw digits di state (item.price Long → string digit),
+                                    // VisualTransformation yang tambahkan separator.
+                                    value = if (item.price > 0L) item.price.toString() else "",
                                     onValueChange = { updatedPriceInput ->
                                         val newPrice = updatedPriceInput.filter { it.isDigit() }.toLongOrNull() ?: 0L
                                         items = items.toMutableList().apply {
                                             this[index] = item.copy(price = newPrice)
                                         }
                                     },
+                                    visualTransformation = RupiahVisualTransformation,
                                     prefix = { Text("Rp ", style = MaterialTheme.typography.bodySmall) },
                                     placeholder = { Text("0") },
                                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
