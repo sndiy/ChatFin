@@ -37,6 +37,7 @@ import com.sndiy.chatfin.core.ui.animation.StaggeredEntrance
 import com.sndiy.chatfin.core.ui.animation.pressScale
 import com.sndiy.chatfin.core.ui.theme.ExpenseRed
 import com.sndiy.chatfin.core.ui.theme.IncomeGreen
+import com.sndiy.chatfin.core.ui.util.RupiahVisualTransformation
 import java.text.NumberFormat
 import java.time.LocalDate
 import java.time.LocalTime
@@ -1057,7 +1058,6 @@ private fun EditOcrTransactionSheet(
                     )
                 } else {
                     items.forEachIndexed { index, item ->
-                        val itemPriceFormatted = if (item.price > 0L) fmt.format(item.price) else ""
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -1078,7 +1078,9 @@ private fun EditOcrTransactionSheet(
                             )
 
                             OutlinedTextField(
-                                value = itemPriceFormatted,
+                                // Simpan raw digits di state (item.price Long → string digit),
+                                // VisualTransformation yang tambahkan separator.
+                                value = if (item.price > 0L) item.price.toString() else "",
                                 onValueChange = { updatedPriceInput ->
                                     val newPrice = updatedPriceInput.filter { it.isDigit() }.toLongOrNull() ?: 0L
                                     val updated = items.toMutableList().apply {
@@ -1087,6 +1089,7 @@ private fun EditOcrTransactionSheet(
                                     items = updated
                                     onItemsChange(updated)
                                 },
+                                visualTransformation = RupiahVisualTransformation,
                                 prefix = { Text("Rp ", style = MaterialTheme.typography.bodySmall) },
                                 placeholder = { Text("0") },
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),

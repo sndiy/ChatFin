@@ -215,28 +215,50 @@ class SyncRepository @Inject constructor(
         }
     }
 
+    // ── Helper: safely read Long from Firestore (handles Double storage) ──────
+    private fun com.google.firebase.firestore.DocumentSnapshot.getFirestoreLong(field: String): Long? {
+        return try {
+            getLong(field)
+        } catch (e: Exception) {
+            // Firestore may store number as Double — try conversion
+            try {
+                getDouble(field)?.toLong()
+            } catch (e2: Exception) {
+                null
+            }
+        }
+    }
+
     // ── Entity → Map ──────────────────────────────────────────────────────────
     private fun FinanceAccountEntity.toMap(): Map<String, Any?> = mapOf(
-        "id"          to id,
-        "name"        to name,
-        "iconName"    to iconName,
-        "colorHex"    to colorHex,
-        "currency"    to currency,
-        "description" to (description ?: ""),
-        "isActive"    to isActive,
-        "sortOrder"   to sortOrder
+        "id"                 to id,
+        "name"               to name,
+        "iconName"           to iconName,
+        "colorHex"           to colorHex,
+        "currency"           to currency,
+        "description"        to (description ?: ""),
+        "isPinProtected"     to isPinProtected,
+        "pinHash"            to (pinHash ?: ""),
+        "isBiometricEnabled" to isBiometricEnabled,
+        "isActive"           to isActive,
+        "sortOrder"          to sortOrder,
+        "createdAt"          to createdAt
     )
 
     private fun WalletEntity.toMap(): Map<String, Any?> = mapOf(
-        "id"        to id,
-        "accountId" to accountId,
-        "name"      to name,
-        "type"      to type,
-        "balance"   to balance,
-        "currency"  to currency,
-        "colorHex"  to colorHex,
-        "iconName"  to iconName,
-        "sortOrder" to sortOrder
+        "id"            to id,
+        "accountId"     to accountId,
+        "name"          to name,
+        "type"          to type,
+        "balance"       to balance,
+        "currency"      to currency,
+        "bankName"      to (bankName ?: ""),
+        "accountNumber" to (accountNumber ?: ""),
+        "iconName"      to iconName,
+        "colorHex"      to colorHex,
+        "isDefault"     to isDefault,
+        "sortOrder"     to sortOrder,
+        "createdAt"     to createdAt
     )
 
     private fun CategoryEntity.toMap(): Map<String, Any?> = mapOf(
@@ -259,8 +281,10 @@ class SyncRepository @Inject constructor(
         "walletId"          to walletId,
         "toWalletId"        to (toWalletId ?: ""),
         "note"              to (note ?: ""),
+        "receiptImageUri"   to (receiptImageUri ?: ""),
         "date"              to date,
         "time"              to time,
+        "transferPairId"    to (transferPairId ?: ""),
         "createdAt"         to createdAt
     )
 
@@ -268,32 +292,46 @@ class SyncRepository @Inject constructor(
     private fun com.google.firebase.firestore.DocumentSnapshot.toFinanceAccount(): FinanceAccountEntity? {
         return try {
             FinanceAccountEntity(
-                id          = getString("id") ?: id,
-                name        = getString("name") ?: return null,
-                iconName    = getString("iconName") ?: "account_balance_wallet",
-                colorHex    = getString("colorHex") ?: "#0061A4",
-                currency    = getString("currency") ?: "IDR",
-                description = getString("description")?.ifBlank { null },
-                isActive    = getBoolean("isActive") ?: false,
-                sortOrder   = getLong("sortOrder")?.toInt() ?: 0
+                id                 = getString("id") ?: id,
+                name               = getString("name") ?: return null,
+                iconName           = getString("iconName") ?: "account_balance_wallet",
+                colorHex           = getString("colorHex") ?: "#0061A4",
+                currency           = getString("currency") ?: "IDR",
+                description        = getString("description")?.ifBlank { null },
+                isPinProtected     = getBoolean("isPinProtected") ?: false,
+                pinHash            = getString("pinHash")?.ifBlank { null },
+                isBiometricEnabled = getBoolean("isBiometricEnabled") ?: false,
+                isActive           = getBoolean("isActive") ?: false,
+                sortOrder          = getLong("sortOrder")?.toInt() ?: 0,
+                createdAt          = getLong("createdAt") ?: System.currentTimeMillis()
             )
-        } catch (e: Exception) { null }
+        } catch (e: Exception) {
+            android.util.Log.w("SyncRepo", "Skip account doc ${id}: ${e.message}")
+            null
+        }
     }
 
     private fun com.google.firebase.firestore.DocumentSnapshot.toWallet(): WalletEntity? {
         return try {
             WalletEntity(
-                id        = getString("id") ?: id,
-                accountId = getString("accountId") ?: return null,
-                name      = getString("name") ?: return null,
-                type      = getString("type") ?: "CASH",
-                balance   = getLong("balance") ?: 0L,
-                currency  = getString("currency") ?: "IDR",
-                colorHex  = getString("colorHex") ?: "#1B8A4C",
-                iconName  = getString("iconName") ?: "payments",
-                sortOrder = getLong("sortOrder")?.toInt() ?: 0
+                id            = getString("id") ?: id,
+                accountId     = getString("accountId") ?: return null,
+                name          = getString("name") ?: return null,
+                type          = getString("type") ?: "CASH",
+                balance       = getLong("balance") ?: 0L,
+                currency      = getString("currency") ?: "IDR",
+                bankName      = getString("bankName")?.ifBlank { null },
+                accountNumber = getString("accountNumber")?.ifBlank { null },
+                iconName      = getString("iconName") ?: "payments",
+                colorHex      = getString("colorHex") ?: "#1B8A4C",
+                isDefault     = getBoolean("isDefault") ?: false,
+                sortOrder     = getLong("sortOrder")?.toInt() ?: 0,
+                createdAt     = getLong("createdAt") ?: System.currentTimeMillis()
             )
-        } catch (e: Exception) { null }
+        } catch (e: Exception) {
+            android.util.Log.w("SyncRepo", "Skip wallet doc ${id}: ${e.message}")
+            null
+        }
     }
 
     private fun com.google.firebase.firestore.DocumentSnapshot.toCategory(): CategoryEntity? {
@@ -308,7 +346,10 @@ class SyncRepository @Inject constructor(
                 isCustom  = getBoolean("isCustom") ?: true,
                 sortOrder = getLong("sortOrder")?.toInt() ?: 0
             )
-        } catch (e: Exception) { null }
+        } catch (e: Exception) {
+            android.util.Log.w("SyncRepo", "Skip category doc ${id}: ${e.message}")
+            null
+        }
     }
 
     private fun com.google.firebase.firestore.DocumentSnapshot.toTransaction(): TransactionEntity? {
@@ -317,16 +358,21 @@ class SyncRepository @Inject constructor(
                 id                = getString("id") ?: id,
                 accountId         = getString("accountId") ?: return null,
                 type              = getString("type") ?: return null,
-                amount            = getLong("amount") ?: return null,
+                amount            = getFirestoreLong("amount") ?: return null,
                 categoryId        = getString("categoryId") ?: return null,
                 walletId          = getString("walletId") ?: return null,
                 toWalletId        = getString("toWalletId")?.ifBlank { null },
                 note              = getString("note")?.ifBlank { null },
+                receiptImageUri   = getString("receiptImageUri")?.ifBlank { null },
                 date              = getString("date") ?: return null,
                 time              = getString("time") ?: return null,
+                transferPairId    = getString("transferPairId")?.ifBlank { null },
                 createdAt         = getLong("createdAt") ?: System.currentTimeMillis()
             )
-        } catch (e: Exception) { null }
+        } catch (e: Exception) {
+            android.util.Log.w("SyncRepo", "Skip transaction doc ${id}: ${e.message}")
+            null
+        }
     }
 }
 

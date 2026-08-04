@@ -28,6 +28,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.sndiy.chatfin.core.data.local.entity.WalletEntity
 import com.sndiy.chatfin.core.ui.animation.StaggeredEntrance
 import com.sndiy.chatfin.core.ui.animation.pressScale
+import com.sndiy.chatfin.core.ui.util.RupiahVisualTransformation
 import java.text.NumberFormat
 import java.util.Locale
 
@@ -302,6 +303,7 @@ fun WalletFormScreen(
                 onValueChange = viewModel::onBalanceChange,
                 label         = { Text("Saldo Awal") },
                 prefix        = { Text("Rp ") },
+                visualTransformation = RupiahVisualTransformation,
                 keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
                     keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
                 ),

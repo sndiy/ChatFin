@@ -37,6 +37,7 @@ import com.sndiy.chatfin.core.ui.animation.StaggeredEntrance
 import com.sndiy.chatfin.core.ui.animation.pressScale
 import com.sndiy.chatfin.core.ui.theme.ExpenseRed
 import com.sndiy.chatfin.core.ui.theme.IncomeGreen
+import com.sndiy.chatfin.core.ui.util.RupiahVisualTransformation
 import com.sndiy.chatfin.feature.finance.budget.data.repository.BudgetWithSpent
 import java.text.NumberFormat
 import java.time.Month
@@ -469,6 +470,7 @@ private fun BudgetFormDialog(
                     onValueChange   = { amount = it.filter { c -> c.isDigit() }; amountError = null },
                     label           = { Text("Batas Budget") },
                     prefix          = { Text("Rp ") },
+                    visualTransformation = RupiahVisualTransformation,
                     isError         = amountError != null,
                     supportingText  = amountError?.let { { Text(it) } },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
