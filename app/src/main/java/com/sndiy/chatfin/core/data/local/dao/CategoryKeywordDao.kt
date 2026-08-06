@@ -18,12 +18,20 @@ data class CategoryKeywordWithCategoryName(
 @Dao
 interface CategoryKeywordDao {
 
+    /**
+     * `accountId` null = tanpa pembatasan (dipakai untuk backup/diagnostik).
+     * Untuk parsing chat WAJIB diisi: tanpa itu, kata kunci milik akun lain ikut
+     * terbawa dan transaksi bisa tersimpan memakai categoryId yang tidak ada di
+     * akun aktif — di UI muncul sebagai UUID mentah, bukan nama kategori.
+     * Kategori global (accountId IS NULL) selalu ikut.
+     */
     @Query("""
         SELECT k.keyword AS keyword, k.categoryId AS categoryId, c.name AS categoryName, k.type AS type
         FROM category_keywords k
         INNER JOIN categories c ON c.id = k.categoryId
+        WHERE :accountId IS NULL OR c.accountId IS NULL OR c.accountId = :accountId
     """)
-    suspend fun getAllWithCategoryName(): List<CategoryKeywordWithCategoryName>
+    suspend fun getAllWithCategoryName(accountId: String?): List<CategoryKeywordWithCategoryName>
 
     @Query("SELECT COUNT(*) FROM category_keywords")
     suspend fun count(): Int

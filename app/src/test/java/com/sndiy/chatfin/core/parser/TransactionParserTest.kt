@@ -207,11 +207,61 @@ class TransactionParserTest {
         assertEquals("EXPENSE", result.draft.type)
     }
 
-    // ── walletHint belum diimplementasikan ────────────────────────────────────
+    // ── walletHint dari kata depan ────────────────────────────────────────────
 
-    @Test fun `walletHint selalu null di M5`() {
+    @Test fun `walletHint diambil dari kata depan dari`() {
         val result = TransactionParser.parse("beli kopi 15000 dari BCA", fakeSource) as ParseResult.Complete
+        assertEquals("BCA", result.draft.walletHint)
+    }
+
+    @Test fun `walletHint diambil dari kata depan pakai`() {
+        val result = TransactionParser.parse("beli kopi 15000 pakai GoPay", fakeSource) as ParseResult.Complete
+        assertEquals("GoPay", result.draft.walletHint)
+    }
+
+    @Test fun `frasa dompet tidak ikut masuk judul`() {
+        val result = TransactionParser.parse("beli kopi 15000 dari BCA", fakeSource) as ParseResult.Complete
+        assertEquals("Beli kopi", result.draft.title)
+    }
+
+    @Test fun `kata depan terakhir yang dipakai untuk walletHint`() {
+        val result = TransactionParser.parse("beli kopi 15000 dari warung pakai GoPay", fakeSource) as ParseResult.Complete
+        assertEquals("GoPay", result.draft.walletHint)
+    }
+
+    @Test fun `walletHint null kalau tidak ada kata depan dompet`() {
+        val result = TransactionParser.parse("beli kopi 15000", fakeSource) as ParseResult.Complete
         assertNull(result.draft.walletHint)
+    }
+
+    // ── Nominal: kuantitas tidak boleh menang atas nominal bersufiks ─────────
+
+    @Test fun `angka kuantitas tidak dikira nominal kalau ada nominal bersufiks`() {
+        val result = TransactionParser.parse("beli 2 kopi 30rb", fakeSource) as ParseResult.Complete
+        assertEquals(30000L, result.draft.amount)
+    }
+
+    @Test fun `angka polos besar tetap dipakai kalau tidak ada yang bersufiks`() {
+        val result = TransactionParser.parse("beli 2 kopi 30000", fakeSource) as ParseResult.Complete
+        assertEquals(30000L, result.draft.amount)
+    }
+
+    // ── Imbuhan kata kerja ────────────────────────────────────────────────────
+
+    @Test fun `mendapatkan dikenali sebagai kata kerja INCOME`() {
+        val result = TransactionParser.parse("saya mendapatkan uang saku 15rb", fakeSource) as ParseResult.Partial
+        assertEquals("INCOME", result.draft.type)
+        assertEquals(15000L, result.draft.amount)
+    }
+
+    @Test fun `menerima dikenali sebagai kata kerja INCOME`() {
+        val result = TransactionParser.parse("menerima transferan 200rb", fakeSource) as ParseResult.Partial
+        assertEquals("INCOME", result.draft.type)
+    }
+
+    @Test fun `membeli dikenali sebagai kata kerja EXPENSE`() {
+        val result = TransactionParser.parse("membeli kopi 20000", fakeSource) as ParseResult.Complete
+        assertEquals("EXPENSE", result.draft.type)
     }
 
     // ══════════════════════════════════════════════════════════════════════
@@ -224,6 +274,19 @@ class TransactionParserTest {
         assertEquals("EXPENSE", result.draft.type)
         assertEquals(15000L, result.draft.amount)
         assertEquals("exp_food", result.draft.categoryId)
+    }
+
+    @Test fun `uang jajan yang diterima terbaca INCOME bukan EXPENSE`() {
+        // Regresi: "jajan" adalah kata kunci kategori exp_food, dan dulu juga
+        // terdaftar sebagai kata kerja pengeluaran — kalimat ini jadi terbaca
+        // EXPENSE dengan confidence 1.0, sehingga user tidak pernah ditawari
+        // daftar kategori untuk mengoreksinya. Sekarang arah uang ditentukan
+        // kata kerjanya ("mendapatkan"), dan karena tidak ada kategori INCOME
+        // yang cocok hasilnya Partial — kategori ditanyakan, bukan ditebak.
+        val result = TransactionParser.parse("saya mendapatkan uang jajan sebesar 15rb") as ParseResult.Partial
+        assertEquals("INCOME", result.draft.type)
+        assertEquals(15000L, result.draft.amount)
+        assertEquals(listOf(TransactionField.CATEGORY), result.missing)
     }
 
     @Test fun `gaji 5jt menjadi Complete INCOME Gaji`() {
@@ -346,12 +409,14 @@ class TransactionParserTest {
         assertEquals("exp_shopping", result.draft.categoryId)
     }
 
-    @Test fun `JAJAN 15RB huruf besar tetap terdeteksi verb dan kategori`() {
+    @Test fun `JAJAN 15RB huruf besar tetap terdeteksi kategori`() {
         val result = TransactionParser.parse("JAJAN 15RB") as ParseResult.Complete
         assertEquals("EXPENSE", result.draft.type)
         assertEquals("exp_food", result.draft.categoryId)
         assertEquals(15000L, result.draft.amount)
-        assertEquals(1.0f, result.confidence, 0.001f)
+        // 0.75, bukan 1.0: "jajan" kini hanya berperan sebagai kata kunci
+        // kategori, tidak lagi dihitung ganda sebagai kata kerja pengeluaran.
+        assertEquals(0.75f, result.confidence, 0.001f)
     }
 
     @Test fun `konser musik 500rb menjadi Complete EXPENSE Hiburan`() {

@@ -27,14 +27,25 @@ class ChatRepository @Inject constructor(
     suspend fun getMessagesOnce(sessionId: String): List<ChatMessageEntity> =
         chatDao.getMessagesBySessionOnce(sessionId)
 
-    suspend fun saveMessage(sessionId: String, role: String, content: String, isError: Boolean) {
+    // `id` datang dari UiMessage, tidak dibuat ulang di sini: kalau baris DB
+    // punya id sendiri, edit/hapus pesan dari sesi berjalan menyasar id yang
+    // tidak ada sehingga perubahannya hilang begitu chat dimuat ulang.
+    suspend fun saveMessage(
+        id: String,
+        sessionId: String,
+        role: String,
+        content: String,
+        isError: Boolean,
+        optionJson: String? = null
+    ) {
         chatDao.insertMessage(
             ChatMessageEntity(
-                id        = UUID.randomUUID().toString(),
-                sessionId = sessionId,
-                role      = role,
-                content   = content,
-                isError   = isError
+                id         = id,
+                sessionId  = sessionId,
+                role       = role,
+                content    = content,
+                isError    = isError,
+                optionJson = optionJson
             )
         )
         chatDao.getSessionById(sessionId)?.let { session ->
@@ -53,6 +64,14 @@ class ChatRepository @Inject constructor(
 
     suspend fun updateMessage(id: String, newContent: String) {
         chatDao.updateMessageContent(id, newContent)
+    }
+
+    suspend fun clearMessageOption(id: String) {
+        chatDao.clearMessageOption(id)
+    }
+
+    suspend fun clearAllOptions(sessionId: String) {
+        chatDao.clearOptionsBySession(sessionId)
     }
 
     suspend fun clearSession(sessionId: String) {

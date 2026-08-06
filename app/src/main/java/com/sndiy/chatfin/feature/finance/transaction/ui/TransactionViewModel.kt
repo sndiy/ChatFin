@@ -307,6 +307,13 @@ class TransactionViewModel @Inject constructor(
 
     fun quickAdd(type: String, amount: Long, categoryId: String, walletId: String, note: String) {
         val accountId = activeAccountId ?: return
+        // Jaring pengaman terakhir sebelum menulis ke DB. Jalur quick add
+        // sebelumnya menerima apa pun yang dikirim sheet tanpa satu pun validasi,
+        // padahal jalur form manual menolak kategori kosong (lihat saveTransaction).
+        if (amount <= 0L || categoryId.isBlank() || walletId.isBlank()) {
+            _listState.update { it.copy(errorMessage = "Transaksi belum lengkap — cek nominal, kategori, dan dompet") }
+            return
+        }
         viewModelScope.launch {
             try {
                 withContext(Dispatchers.IO) {

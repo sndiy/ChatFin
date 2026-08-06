@@ -13,9 +13,18 @@ import javax.inject.Singleton
 sealed class BotStep {
     object Idle : BotStep()
     data class WaitAmount(val type: String) : BotStep()
-    data class WaitCategory(val type: String, val amount: Long) : BotStep()
-    data class WaitWallet(val type: String, val amount: Long, val category: String) : BotStep()
-    data class WaitDesc(val type: String, val amount: Long, val category: String, val wallet: String) : BotStep()
+    data class WaitCategory(
+        val type: String, val amount: Long,
+        val suggestedTitle: String? = null
+    ) : BotStep()
+    data class WaitWallet(
+        val type: String, val amount: Long, val category: String,
+        val suggestedTitle: String? = null
+    ) : BotStep()
+    data class WaitDesc(
+        val type: String, val amount: Long, val category: String, val wallet: String,
+        val suggestedTitle: String? = null
+    ) : BotStep()
 }
 
 data class BotResult(
@@ -32,13 +41,25 @@ data class AiConfirmRequest(
     val category: String,
     val wallet: String,
     val desc: String
-)
+) {
+    /** Konfirmasi versi aplikasi, dipakai saat AI tidak tersedia atau gagal. */
+    fun toConfirm() = ChatOption.TransactionConfirm(
+        type     = type,
+        amount   = amount,
+        category = category,
+        wallet   = wallet,
+        title    = desc.ifBlank { "$category $wallet" }
+    )
+}
 
 @Singleton
 class BotModeHandler @Inject constructor() {
 
     private val fmt = NumberFormat.getNumberInstance(Locale("id", "ID"))
     private fun rp(amount: Long) = "Rp ${fmt.format(amount)}"
+
+    private val cancelWords = setOf("batal", "batalkan", "cancel", "stop", "berhenti")
+    private val hintCancel  = "\n\n_Ketik *batal* kalau mau berhenti._"
 
     fun handle(
         input: String,
@@ -117,7 +138,9 @@ class BotModeHandler @Inject constructor() {
     // kategori (Complete) — jadi step yang sudah terjawab oleh parser dilompati,
     // bukan ditanya ulang. Judul (title) TETAP ditanya di WaitDesc seperti
     // biasa — parser sudah menebak judul dari sisa teks, tapi user tetap
-    // diberi kesempatan mengoreksi/menambah detail sebelum disimpan.
+    // diberi kesempatan mengoreksi/menambah detail sebelum disimpan (judul
+    // tebakan itu dibawa sebagai suggestedTitle dan dipakai kalau user melewati
+    // langkah judul, supaya tidak jatuh ke judul sintetis "Kategori Dompet").
     fun handleParsed(
         draft: ParsedDraft,
         wallets: List<WalletEntity>,
@@ -128,12 +151,31 @@ class BotModeHandler @Inject constructor() {
         val type   = draft.type ?: "EXPENSE"
         val amount = draft.amount ?: return BotResult("Nominal tidak dikenali 🤔", nextStep = BotStep.Idle)
         val cats   = if (type == "INCOME") incomeCategories else expenseCategories
+        val title  = draft.title.takeIf { it.isNotBlank() }
 
-        return if (draft.categoryName != null) {
-            askWallet(type, amount, draft.categoryName, wallets, voice)
+        val category = draft.categoryName
+            ?: return askCategory(type, amount, cats, voice, suggestedTitle = title)
+
+        // Dompet yang sudah disebut di kalimat awal ("... dari BCA") tidak perlu
+        // ditanya ulang — tapi hanya kalau benar-benar cocok dengan dompet yang
+        // ada. Kalau tidak cocok, alurnya kembali normal (ditanyakan).
+        val hinted = draft.walletHint?.let { matchWallet(it, wallets) }
+        return if (hinted != null) {
+            BotResult(
+                text     = voice.askTitle,
+                nextStep = BotStep.WaitDesc(type, amount, category, hinted.name, title)
+            )
         } else {
-            askCategory(type, amount, cats, voice)
+            askWallet(type, amount, category, wallets, voice, suggestedTitle = title)
         }
+    }
+
+    /** Cocokkan teks bebas ke dompet yang benar-benar ada: persis dulu, baru longgar. */
+    private fun matchWallet(input: String, wallets: List<WalletEntity>): WalletEntity? {
+        if (input.isBlank()) return null
+        return wallets.find { it.name.equals(input, ignoreCase = true) }
+            ?: wallets.find { it.name.contains(input, ignoreCase = true) }
+            ?: wallets.find { input.contains(it.name, ignoreCase = true) }
     }
 
     private fun handleStep(
@@ -144,11 +186,21 @@ class BotModeHandler @Inject constructor() {
         incomeCategories: List<CategoryEntity>,
         voice: PersonaVoice
     ): BotResult {
+        // Jalan keluar dari wizard di langkah mana pun. Tanpa ini, input yang
+        // tidak pernah cocok membuat user terkunci di step yang sama selamanya
+        // (satu-satunya cara keluar dulu: tutup chat atau putus internet).
+        if (input.trim().lowercase().trimStart('/') in cancelWords) {
+            return BotResult("Oke, transaksinya dibatalkan. 👌", nextStep = BotStep.Idle)
+        }
+
         return when (step) {
             is BotStep.WaitAmount -> {
                 val amount = parseAmount(input)
                 if (amount == null) {
-                    BotResult("Nominal tidak valid 🤔\nContoh: 50000 · 50rb · 50k · 1.5jt", nextStep = step)
+                    BotResult(
+                        "Nominal tidak valid 🤔\nContoh: 50000 · 50rb · 50k · 1.5jt\n_Ketik *batal* untuk berhenti._",
+                        nextStep = step
+                    )
                 } else {
                     val cats = if (step.type == "INCOME") incomeCategories else expenseCategories
                     askCategory(step.type, amount, cats, voice)
@@ -160,23 +212,25 @@ class BotModeHandler @Inject constructor() {
                 val cat  = cats.find { it.name.equals(input, ignoreCase = true) }
                     ?: cats.find { it.name.contains(input, ignoreCase = true) }
                     ?: cats.find { input.contains(it.name, ignoreCase = true) }
-                if (cat == null) askCategory(step.type, step.amount, cats, voice, invalid = true)
-                else askWallet(step.type, step.amount, cat.name, wallets, voice)
+                if (cat == null) askCategory(step.type, step.amount, cats, voice, invalid = true, suggestedTitle = step.suggestedTitle)
+                else askWallet(step.type, step.amount, cat.name, wallets, voice, suggestedTitle = step.suggestedTitle)
             }
 
             is BotStep.WaitWallet -> {
-                val wallet = wallets.find { it.name.equals(input, ignoreCase = true) }
-                    ?: wallets.find { it.name.contains(input, ignoreCase = true) }
-                    ?: wallets.find { input.contains(it.name, ignoreCase = true) }
-                if (wallet == null) askWallet(step.type, step.amount, step.category, wallets, voice, invalid = true)
+                val wallet = matchWallet(input, wallets)
+                if (wallet == null) askWallet(step.type, step.amount, step.category, wallets, voice, invalid = true, suggestedTitle = step.suggestedTitle)
                 else BotResult(
                     text     = voice.askTitle,
-                    nextStep = BotStep.WaitDesc(step.type, step.amount, step.category, wallet.name)
+                    nextStep = BotStep.WaitDesc(step.type, step.amount, step.category, wallet.name, step.suggestedTitle)
                 )
             }
 
             is BotStep.WaitDesc -> {
-                val desc = if (input.lowercase() in listOf("skip", "-", "lewati", "")) "" else input
+                // Judul yang sudah ditebak parser dari kalimat awal dipakai kalau
+                // user melewati langkah ini — informasi yang sudah ada tidak dibuang.
+                val desc = if (input.lowercase() in listOf("skip", "-", "lewati", "")) {
+                    step.suggestedTitle.orEmpty()
+                } else input
                 // Semua data lengkap → minta AI buat konfirmasi. ChatViewModel
                 // langsung mengambil alih lewat requestAiConfirm dan menaruh
                 // hasilnya di pendingTransaction (dikonfirmasi via tombol UI,
@@ -195,30 +249,32 @@ class BotModeHandler @Inject constructor() {
 
     private fun askCategory(
         type: String, amount: Long,
-        cats: List<CategoryEntity>, voice: PersonaVoice, invalid: Boolean = false
+        cats: List<CategoryEntity>, voice: PersonaVoice, invalid: Boolean = false,
+        suggestedTitle: String? = null
     ): BotResult {
         return if (cats.isEmpty()) {
             BotResult("Belum ada kategori. Tambahkan dulu di Setelan.", nextStep = BotStep.Idle)
         } else {
             BotResult(
-                text     = voice.categoryPrompt(rp(amount), invalid),
+                text     = voice.categoryPrompt(rp(amount), invalid) + if (invalid) hintCancel else "",
                 option   = ChatOption.CategoryOptions(cats.map { it.name }),
-                nextStep = BotStep.WaitCategory(type, amount)
+                nextStep = BotStep.WaitCategory(type, amount, suggestedTitle)
             )
         }
     }
 
     private fun askWallet(
         type: String, amount: Long, category: String,
-        wallets: List<WalletEntity>, voice: PersonaVoice, invalid: Boolean = false
+        wallets: List<WalletEntity>, voice: PersonaVoice, invalid: Boolean = false,
+        suggestedTitle: String? = null
     ): BotResult {
         return if (wallets.isEmpty()) {
             BotResult("Belum ada dompet.", nextStep = BotStep.Idle)
         } else {
             BotResult(
-                text     = voice.walletPrompt(category, invalid),
+                text     = voice.walletPrompt(category, invalid) + if (invalid) hintCancel else "",
                 option   = ChatOption.WalletOptions(wallets.map { it.name }),
-                nextStep = BotStep.WaitWallet(type, amount, category)
+                nextStep = BotStep.WaitWallet(type, amount, category, suggestedTitle)
             )
         }
     }

@@ -10,9 +10,11 @@ enum class TransactionField { CATEGORY, WALLET }
  * ChatOption), supaya tidak perlu lapisan konversi tambahan saat dipasang ke
  * ChatViewModel di M7.
  *
- * `walletHint` disediakan untuk perluasan nanti (mis. deteksi "dari BCA") —
- * TransactionParser saat ini SELALU mengisi null, belum ada logika deteksi
- * dompet dari teks.
+ * `walletHint` berisi nama dompet mentah yang disebut user lewat kata depan
+ * ("dari BCA", "pakai GoPay") — masih berupa teks apa adanya, BELUM dicocokkan
+ * ke dompet yang benar-benar ada. Pencocokan ke `WalletEntity` dilakukan
+ * pemanggil (BotModeHandler.handleParsed); kalau tidak ada yang cocok, dompet
+ * tetap ditanyakan seperti biasa.
  */
 data class ParsedDraft(
     val type: String?,

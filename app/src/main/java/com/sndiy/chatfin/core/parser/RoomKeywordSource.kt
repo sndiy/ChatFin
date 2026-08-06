@@ -32,8 +32,13 @@ class RoomKeywordSource @Inject constructor(
     @Volatile
     private var cache: List<CategoryKeywordWithCategoryName> = emptyList()
 
-    suspend fun refresh() {
-        cache = dao.getAllWithCategoryName()
+    /**
+     * Isi cache dengan kata kunci milik [accountId] plus kategori global.
+     * Wajib dipanggil ulang setiap akun aktif berganti — kalau tidak, kamus
+     * akun sebelumnya masih terpakai untuk akun yang sekarang.
+     */
+    suspend fun refresh(accountId: String?) {
+        cache = dao.getAllWithCategoryName(accountId)
     }
 
     override fun findCategory(text: String, type: String): CategoryMatch? {

@@ -48,7 +48,10 @@ class GeminiRepository @Inject constructor(
                 }
                 else -> {
                     quotaRetryCount = 0
-                    android.util.Log.e("GeminiRepo", "Error: ${e::class.simpleName}: ${e.message}", e)
+                    // Jangan cetak e.message — exception dari Google AI SDK kadang
+                    // mengandung API key di pesan error (misal "API key not valid: AIza...").
+                    // Cukup class name untuk debugging, tanpa risiko bocor key via Logcat.
+                    android.util.Log.e("GeminiRepo", "Error: ${e::class.simpleName}")
                     val msg = when {
                         e.message?.contains("API_KEY", ignoreCase = true) == true ||
                                 e.message?.contains("API key", ignoreCase = true) == true ->

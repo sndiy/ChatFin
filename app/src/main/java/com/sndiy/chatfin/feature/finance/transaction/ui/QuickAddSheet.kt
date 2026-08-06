@@ -66,11 +66,15 @@ fun QuickAddSheet(
     var isExpense         by remember { mutableStateOf(true) }
     var rawDigits         by remember { mutableStateOf("") }      // digit murni tanpa separator
     var selectedCategory  by remember { mutableStateOf<CategoryEntity?>(null) }
-    var selectedWallet    by remember { mutableStateOf(wallets.firstOrNull()) }
+    // Berkunci pada `wallets`: tanpa key, sheet yang tersusun sebelum daftar
+    // dompet sempat terbit akan memegang null selamanya dan tombol Simpan
+    // tidak pernah bekerja.
+    var selectedWallet    by remember(wallets) { mutableStateOf(wallets.firstOrNull()) }
     var selectedNote      by remember { mutableStateOf("") }       // catatan dari chip preset
     var showCustomNote    by remember { mutableStateOf(true) }     // otomatis aktifkan opsi 'Lainnya' / custom note
     var customNoteText    by remember { mutableStateOf("") }
     var amountError       by remember { mutableStateOf(false) }
+    var categoryError     by remember { mutableStateOf(false) }
 
     val categories = if (isExpense) expenseCategories else incomeCategories
 
@@ -80,9 +84,14 @@ fun QuickAddSheet(
         if (num != null && num > 0) fmt.format(num) else rawDigits.ifBlank { "" }
     }
 
-    // Auto-select first category when type changes
+    // Ganti tipe = mulai dari nol. Kategori SENGAJA tidak dipilihkan otomatis:
+    // "Makanan & Minuman" selalu jadi kategori pertama (sortOrder 0), jadi
+    // memilih categories.firstOrNull() di sini membuat setiap transaksi yang
+    // user-nya tidak menyentuh baris kategori — mis. tarik tunai yang cuma
+    // diketik di catatan — tersimpan sebagai makanan tanpa peringatan apa pun.
     LaunchedEffect(isExpense) {
-        selectedCategory = categories.firstOrNull()
+        selectedCategory = null
+        categoryError = false
         selectedNote = ""
         showCustomNote = true
         customNoteText = ""
@@ -183,7 +192,12 @@ fun QuickAddSheet(
             HorizontalDivider()
 
             // ── Kategori chip ─────────────────────────────────────────────────
-            Text("Kategori", style = MaterialTheme.typography.labelMedium)
+            Text(
+                text  = if (categoryError) "Kategori — pilih dulu" else "Kategori",
+                style = MaterialTheme.typography.labelMedium,
+                color = if (categoryError) MaterialTheme.colorScheme.error
+                        else MaterialTheme.colorScheme.onSurfaceVariant
+            )
             LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 items(categories) { cat ->
                     val isSelected = selectedCategory?.id == cat.id
@@ -193,7 +207,7 @@ fun QuickAddSheet(
 
                     FilterChip(
                         selected    = isSelected,
-                        onClick     = { selectedCategory = cat },
+                        onClick     = { selectedCategory = cat; categoryError = false },
                         label       = { Text(cat.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                         leadingIcon = {
                             Box(Modifier.size(8.dp).clip(CircleShape).background(catColor))
@@ -268,7 +282,11 @@ fun QuickAddSheet(
                         amountError = true
                         return@Button
                     }
-                    val cat = selectedCategory ?: return@Button
+                    val cat = selectedCategory
+                    if (cat == null) {
+                        categoryError = true
+                        return@Button
+                    }
                     val wal = selectedWallet ?: return@Button
 
                     val finalNote = when {

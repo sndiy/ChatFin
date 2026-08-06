@@ -18,7 +18,7 @@
 //   2. Isi satu baris data nyata di tiap tabel.
 //   3. Jalankan seluruh rantai migrasi lewat MigrationTestHelper, dengan
 //      validateDroppedTables=true — ini membandingkan skema HASIL migrasi
-//      terhadap app/schemas/6.json kolom demi kolom, indeks demi indeks.
+//      terhadap app/schemas/8.json kolom demi kolom, indeks demi indeks.
 //      Kalau ada satu kolom saja yang meleset (termasuk kolom recurring yang
 //      seharusnya SUDAH tidak ada lagi), test ini gagal.
 //   4. Buka hasil migrasi lewat Room (bukan raw SQL) dan pastikan baris yang
@@ -36,6 +36,8 @@ import com.sndiy.chatfin.core.di.MIGRATION_2_3
 import com.sndiy.chatfin.core.di.MIGRATION_3_4
 import com.sndiy.chatfin.core.di.MIGRATION_4_5
 import com.sndiy.chatfin.core.di.MIGRATION_5_6
+import com.sndiy.chatfin.core.di.MIGRATION_6_7
+import com.sndiy.chatfin.core.di.MIGRATION_7_8
 import com.sndiy.chatfin.core.parser.DefaultKeywords
 import kotlinx.coroutines.flow.first
 import org.junit.Assert.assertEquals
@@ -57,7 +59,7 @@ class MigrationTest {
     )
 
     @Test
-    fun migrate1To6_realWorldSchema_preservesDataAndMatchesLatestSchema() {
+    fun migrate1To8_realWorldSchema_preservesDataAndMatchesLatestSchema() {
         // ── 1. Bangun database v1 PERSIS sesuai app/schemas/1.json ──────────
         // createDatabase() menjalankan CREATE TABLE dari @Database class saat
         // ini kalau kita tidak berhati-hati — untuk memastikan kita menguji
@@ -160,13 +162,15 @@ class MigrationTest {
         // ── 3. Jalankan rantai migrasi asli, validasi terhadap schema v6 ────
         db = helper.runMigrationsAndValidate(
             testDbName,
-            6,
+            8,
             true,
             MIGRATION_1_2,
             MIGRATION_2_3,
             MIGRATION_3_4,
             MIGRATION_4_5,
-            MIGRATION_5_6
+            MIGRATION_5_6,
+            MIGRATION_6_7,
+            MIGRATION_7_8
         )
         db.close()
 
@@ -176,7 +180,10 @@ class MigrationTest {
             ChatFinDatabase::class.java,
             testDbName
         )
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+            .addMigrations(
+                MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5,
+                MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8
+            )
             .build()
 
         runBlockingTestRead {
@@ -195,7 +202,7 @@ class MigrationTest {
             val keywordCount = roomDb.categoryKeywordDao().count()
             assertEquals(DefaultKeywords.entries.size, keywordCount)
 
-            val jajanMatch = roomDb.categoryKeywordDao().getAllWithCategoryName()
+            val jajanMatch = roomDb.categoryKeywordDao().getAllWithCategoryName(null)
                 .first { it.keyword == "jajan" }
             assertEquals("exp_food", jajanMatch.categoryId)
             assertEquals("Makanan & Minuman", jajanMatch.categoryName)

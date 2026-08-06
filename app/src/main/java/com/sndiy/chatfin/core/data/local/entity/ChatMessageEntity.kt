@@ -12,5 +12,10 @@ data class ChatMessageEntity(
     val role: String,                   // USER | ASSISTANT
     val content: String,                // isi pesan
     val isError: Boolean = false,       // true jika pesan error dari AI
+    // ChatOption terserialisasi (chip kategori/dompet, kartu konfirmasi, dll).
+    // null = pesan biasa ATAU opsi sudah dipakai/dibatalkan — dikosongkan lewat
+    // ChatDao.clearMessageOption supaya pertanyaan yang sudah dijawab tidak
+    // muncul lagi sebagai tombol aktif setelah layar dibuka ulang.
+    val optionJson: String? = null,
     val createdAt: Long = System.currentTimeMillis()
 )

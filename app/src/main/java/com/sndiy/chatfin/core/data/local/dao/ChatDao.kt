@@ -60,6 +60,14 @@ interface ChatDao {
     @Query("UPDATE chat_messages SET content = :content WHERE id = :id")
     suspend fun updateMessageContent(id: String, content: String)
 
+    // Opsi yang sudah dipakai user dikosongkan supaya tidak bisa ditekan lagi
+    // setelah layar dibuka ulang (pertanyaan yang sudah terjawab).
+    @Query("UPDATE chat_messages SET optionJson = NULL WHERE id = :id")
+    suspend fun clearMessageOption(id: String)
+
+    @Query("UPDATE chat_messages SET optionJson = NULL WHERE sessionId = :sessionId")
+    suspend fun clearOptionsBySession(sessionId: String)
+
     // Hapus satu pesan
     @Delete
     suspend fun deleteMessage(message: ChatMessageEntity)

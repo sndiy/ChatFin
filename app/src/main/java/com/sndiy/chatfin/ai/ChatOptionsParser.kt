@@ -1,12 +1,23 @@
 package com.sndiy.chatfin.ai
 
+import kotlinx.serialization.Serializable
 import org.json.JSONObject
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/**
+ * @Serializable supaya opsi bisa ikut disimpan bersama pesannya di Room.
+ * Tanpa itu, tombol pilihan hilang setiap layar chat dibuka ulang — pesannya
+ * pulih dari database tapi opsinya tidak, jadi percakapan yang sedang berjalan
+ * kehilangan satu-satunya cara melanjutkannya.
+ */
+@Serializable
 sealed class ChatOption {
+    @Serializable
     data class CategoryOptions(val options: List<String>) : ChatOption()
+    @Serializable
     data class WalletOptions(val options: List<String>) : ChatOption()
+    @Serializable
     data class TransactionConfirm(
         val type: String,
         val amount: Long,
@@ -14,16 +25,39 @@ sealed class ChatOption {
         val wallet: String,
         val title: String = ""
     ) : ChatOption()
+    @Serializable
     data class YesNo(val question: String) : ChatOption()
+    @Serializable
     data class VisualizationRequest(
         val title: String = "Grafik Keuangan",
         val initialType: String = "BAR",
         val initialPeriod: String = "THIS_MONTH"
     ) : ChatOption()
+    @Serializable
     data class TableRequest(
         val title: String = "Tabel Keuangan",
         val initialTemplate: String = "CATEGORY_SUMMARY"
     ) : ChatOption()
+
+    companion object {
+        private val json = kotlinx.serialization.json.Json {
+            // Skema opsi bisa bertambah; baris lama tidak boleh bikin crash.
+            ignoreUnknownKeys = true
+            // WAJIB diganti dari default "type": TransactionConfirm punya field
+            // bernama `type` (INCOME/EXPENSE), dan bentrok dengan penanda varian
+            // membuat seluruh proses encode gagal — kartu konfirmasi diam-diam
+            // tidak pernah tersimpan.
+            classDiscriminator = "optionKind"
+        }
+
+        fun encode(option: ChatOption?): String? =
+            option?.let { runCatching { json.encodeToString(serializer(), it) }.getOrNull() }
+
+        /** Baris lama / format tak dikenal cukup jadi null — pesannya tetap tampil. */
+        fun decode(raw: String?): ChatOption? =
+            raw?.takeIf { it.isNotBlank() }
+                ?.let { runCatching { json.decodeFromString(serializer(), it) }.getOrNull() }
+    }
 }
 
 data class ParsedMessage(

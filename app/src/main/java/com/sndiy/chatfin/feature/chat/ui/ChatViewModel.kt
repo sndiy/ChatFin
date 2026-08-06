@@ -22,6 +22,7 @@ import com.sndiy.chatfin.feature.finance.transaction.data.repository.CategoryRep
 import com.sndiy.chatfin.feature.finance.transaction.data.repository.TransactionRepository
 import com.sndiy.chatfin.feature.finance.transaction.data.repository.WalletRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -72,6 +73,9 @@ data class PendingTransaction(
     val desc: String = ""
 )
 
+// AiDraft & ChatSlotResolver ada di paket ai/ (ChatSlotResolver.kt) supaya
+// keputusan slot bisa diuji tanpa Hilt/Room/Android.
+
 // Hasil combine data akun untuk membangun konteks finansial chat.
 private data class ChatAccountData(
     val wallets: List<WalletEntity>,
@@ -104,6 +108,9 @@ class ChatViewModel @Inject constructor(
         /** Maks pasangan (role, text) yang disimpan di chatHistory in-memory.
          *  Mencegah token API membengkak tanpa batas. */
         private const val MAX_CHAT_HISTORY = 30
+
+        /** Di bawah ini hampir pasti bukan nominal rupiah — lihat [captureSlotsFromUserMessage]. */
+        private const val MIN_CAPTURED_AMOUNT = 1_000L
     }
 
     private val _uiState = MutableStateFlow(ChatUiState())
@@ -114,16 +121,20 @@ class ChatViewModel @Inject constructor(
 
     private val chatHistory   = mutableListOf<Pair<String, String>>()
     private var systemPrompt  = ""
+    private var lastFinanceContext = ""
     private var activePersona: PersonaPreset = PersonaPresets.MAI
     private var activeVoice: PersonaVoice = PersonaVoices.MAI
     private var activeCustomText: String = ""
     private var lastTotalIncome: Long = 0L
     private var lastTotalExpense: Long = 0L
     private var botStep: BotStep = BotStep.Idle
+    private var aiDraft: AiDraft = AiDraft()
     private var generationJob: Job? = null
     private var retryJob: Job?      = null
     private var currentLoadingId: String? = null
     private var sessionId: String? = null
+    /** Kartu konfirmasi hasil restore yang masih menunggu data akun. */
+    private var restoredConfirm: ChatOption.TransactionConfirm? = null
 
     private var lastUserMessage: String = ""
     private var lastHistorySnapshot: List<Pair<String, String>> = emptyList()
@@ -131,12 +142,20 @@ class ChatViewModel @Inject constructor(
     private var hasShownNoApiKeyMessage = false
     private var aiRetryCount = 0
 
+    /**
+     * Sebelum refresh selesai, RoomKeywordSource.findCategory SELALU
+     * mengembalikan null — pesan pertama jadi berperilaku beda dari pesan
+     * berikutnya (kategori tidak pernah ketemu). Dulu refresh-nya
+     * fire-and-forget di init; sekarang penanda ini ditunggu dulu oleh setiap
+     * pemanggil parser, dan baru selesai setelah kamus terisi sesuai akun aktif.
+     */
+    private val keywordReady = CompletableDeferred<Unit>()
+
     init {
         observeActiveAccountAndSync()
         observeChatHistory()
         observeNetwork()
         observePersona()
-        viewModelScope.launch { keywordSource.refresh() }
     }
 
     private fun observeChatHistory() {
@@ -153,10 +172,18 @@ class ChatViewModel @Inject constructor(
                             id      = entity.id,
                             role    = entity.role,
                             text    = entity.content,
+                            option  = ChatOption.decode(entity.optionJson),
                             isError = entity.isError
                         )
                     }
                     _uiState.update { it.copy(messages = persisted) }
+
+                    // Kartu konfirmasi yang ikut pulih harus tetap bisa ditekan:
+                    // pendingTransaction TIDAK persist, jadi tanpa ini tombol
+                    // Simpan mati tanpa penjelasan. Disiapkan ulang setelah data
+                    // dompet/kategori akun tersedia (lihat observeActiveAccountAndSync).
+                    restoredConfirm = persisted.lastOrNull()?.option as? ChatOption.TransactionConfirm
+                    tryPrepareRestoredConfirm()
 
                     chatHistory.clear()
                     persisted
@@ -227,7 +254,9 @@ class ChatViewModel @Inject constructor(
                 isBotMode        = true
             )
         }
-        if (botStep !is BotStep.Idle) botStep = BotStep.Idle
+        // botStep SENGAJA dipertahankan. Wizard bot justru jalur yang bekerja
+        // tanpa internet, jadi mereset step di sini membuang transaksi yang
+        // setengah terisi persis pada saat alurnya masih bisa dilanjutkan.
         if (!hasShownOfflineMessage) {
             hasShownOfflineMessage = true
             addMessage(UiMessage(role = "model", text = activeVoice.switchOffline))
@@ -238,7 +267,8 @@ class ChatViewModel @Inject constructor(
         _uiState.update {
             it.copy(connectionStatus = ConnectionStatus.BOT_MODE, isBotMode = true)
         }
-        if (botStep !is BotStep.Idle) botStep = BotStep.Idle
+        // Sama seperti switchToOfflineMode: wizard yang sedang berjalan tetap
+        // bisa diselesaikan tanpa API key, jadi step-nya tidak dibuang.
         if (!hasShownNoApiKeyMessage) {
             hasShownNoApiKeyMessage = true
             addMessage(UiMessage(role = "model", text = activeVoice.switchNoApiKey))
@@ -256,6 +286,9 @@ private data class Tuple4<A, B, C, D>(val a: A, val b: B, val c: C, val d: D)
                 .flatMapLatest { account ->
                     _uiState.update { it.copy(activeAccount = account) }
                     if (account == null) {
+                        // Tidak ada akun = tidak akan pernah ada kamus. Penanda
+                        // tetap dilepas supaya pengiriman pesan tidak menggantung.
+                        keywordReady.complete(Unit)
                         emptyFlow()
                     } else {
                         val now   = LocalDate.now()
@@ -290,13 +323,19 @@ private data class Tuple4<A, B, C, D>(val a: A, val b: B, val c: C, val d: D)
                     lastTotalIncome  = data.totalIncome
                     lastTotalExpense = data.totalExpense
                     rebuildSystemPrompt(data.totalIncome, data.totalExpense)
+                    // Kamus kata kunci dibatasi ke akun aktif (+ kategori global)
+                    // dan ikut diperbarui saat akun berganti atau kategori berubah.
+                    keywordSource.refresh(_uiState.value.activeAccount?.id)
+                    keywordReady.complete(Unit)
+
+                    tryPrepareRestoredConfirm()
                 }
         }
     }
 
     private fun rebuildSystemPrompt(totalIncome: Long = 0L, totalExpense: Long = 0L) {
         val state = _uiState.value
-        val ctx   = contextBuilder.buildContext(
+        lastFinanceContext = contextBuilder.buildContext(
             account           = state.activeAccount,
             wallets           = state.wallets,
             expenseCategories = state.expenseCategories,
@@ -304,13 +343,21 @@ private data class Tuple4<A, B, C, D>(val a: A, val b: B, val c: C, val d: D)
             totalIncome       = totalIncome,
             totalExpense      = totalExpense
         )
-        systemPrompt = systemPromptBuilder.build(
-            financeContext    = ctx,
-            userName          = state.activeAccount?.name ?: "Kamu",
-            persona           = activePersona,
-            customPersonaText = activeCustomText
-        )
+        systemPrompt = buildPrompt()
     }
+
+    /**
+     * Prompt dirakit ulang tiap permintaan karena slot yang sudah diketahui
+     * berubah tiap giliran, dan penegasannya harus ikut masuk ke dalam blok
+     * alur — bukan ditempel di ujung prompt.
+     */
+    private fun buildPrompt(): String = systemPromptBuilder.build(
+        financeContext    = lastFinanceContext,
+        userName          = _uiState.value.activeAccount?.name ?: "Kamu",
+        persona           = activePersona,
+        customPersonaText = activeCustomText,
+        knownSlots        = slotReminder()
+    )
 
     fun onInputChange(text: String) {
         _uiState.update { it.copy(inputText = text) }
@@ -337,7 +384,16 @@ private data class Tuple4<A, B, C, D>(val a: A, val b: B, val c: C, val d: D)
         hasShownOfflineMessage = false
         hasShownNoApiKeyMessage = false
         aiRetryCount = 0
-        botStep = BotStep.Idle
+        if (botStep !is BotStep.Idle) {
+            // Kembali ke AI berarti mengulang pesan terakhir dari awal, jadi
+            // wizard memang harus dihentikan — tapi user diberi tahu, tidak
+            // dibuang diam-diam seperti sebelumnya.
+            botStep = BotStep.Idle
+            addMessage(UiMessage(
+                role = "model",
+                text = "Balik ke mode AI — pencatatan yang tadi belum selesai jadi kubatalkan dulu ya."
+            ))
+        }
         _uiState.update {
             it.copy(connectionStatus = ConnectionStatus.CONNECTED, isBotMode = false)
         }
@@ -401,6 +457,10 @@ private data class Tuple4<A, B, C, D>(val a: A, val b: B, val c: C, val d: D)
                 replyingToMessage = null
             )
         }
+
+        // Percakapan dipotong sampai titik edit — slot yang terkumpul dari
+        // pesan-pesan setelahnya ikut tidak berlaku lagi.
+        resetAiDraft()
 
         // Rebuild chatHistory sampai titik sebelum pesan yang diedit
         chatHistory.clear()
@@ -467,23 +527,28 @@ private data class Tuple4<A, B, C, D>(val a: A, val b: B, val c: C, val d: D)
             return
         }
 
-        if (!networkMonitor.isCurrentlyConnected()) {
-            switchToOfflineMode()
-            handleBotMode(text)
-            return
-        }
+        // Offline dan "Pakai Bot" ditangani dengan cara yang SAMA. Sebelumnya
+        // cabang offline langsung lompat ke handleBotMode, sehingga
+        // TransactionParser tidak pernah dipakai justru saat sedang tidak ada
+        // internet — padahal itu satu-satunya situasi parser ini dirancang
+        // untuk menggantikan AI. Akibatnya kalimat wajar seperti "jajan 15rb"
+        // dijawab "Perintah tidak dikenal", dan user offline hanya bisa
+        // mencatat lewat perintah setor/tarik.
+        val offline = !networkMonitor.isCurrentlyConnected()
+        if (offline) switchToOfflineMode()
 
-        if (_uiState.value.isBotMode) {
-            // User sedang di bot mode manual (tekan "Pakai Bot") — tetap
-            // gunakan TransactionParser + bot commands.
+        if (offline || _uiState.value.isBotMode) {
             if (isBotCommand(text)) {
                 handleBotMode(text)
                 return
             }
-            when (val parsed = TransactionParser.parse(text, keywordSource)) {
-                is ParseResult.Complete -> handleParsedTransaction(parsed.draft)
-                is ParseResult.Partial  -> handleParsedTransaction(parsed.draft)
-                ParseResult.NotATransaction -> handleBotMode(text)
+            viewModelScope.launch {
+                keywordReady.await()
+                when (val parsed = TransactionParser.parse(text, keywordSource)) {
+                    is ParseResult.Complete -> handleParsedTransaction(parsed.draft)
+                    is ParseResult.Partial  -> handleParsedTransaction(parsed.draft)
+                    ParseResult.NotATransaction -> handleBotMode(text)
+                }
             }
             return
         }
@@ -522,11 +587,156 @@ private data class Tuple4<A, B, C, D>(val a: A, val b: B, val c: C, val d: D)
         lastUserMessage     = text
         lastHistorySnapshot = historySnapshot
         aiRetryCount        = 0
-        executeAiRequest(text, historySnapshot)
+        viewModelScope.launch {
+            keywordReady.await()
+            val wasReady = aiDraft.isReadyToConfirm
+            captureSlotsFromUserMessage(text)
+            // Pesan inilah yang melengkapi slot terakhir → giliran ini memang
+            // sudah waktunya konfirmasi. Dipakai sebagai jaring pengaman kalau
+            // model malah bertanya lagi (lihat executeAiRequest).
+            val justCompleted = !wasReady && aiDraft.isReadyToConfirm
+            executeAiRequest(text, historySnapshot, justCompleted)
+        }
     }
 
+    // ── Slot transaksi jalur AI (lihat dok AiDraft) ───────────────────────────
+
+    private fun mergeAiDraft(
+        type: String? = null,
+        amount: Long? = null,
+        categoryName: String? = null,
+        walletName: String? = null,
+        title: String? = null
+    ) {
+        aiDraft = aiDraft.merge(type, amount, categoryName, walletName, title)
+    }
+
+    /**
+     * Parser lokal tetap dijalankan di jalur AI — bukan untuk mengambil alih
+     * percakapan, tapi supaya nominal & kategori punya sumber kebenaran di sisi
+     * aplikasi yang tidak bergantung pada ingatan model.
+     *
+     * Ambang Rp 1.000 menyaring angka yang jelas bukan nominal ("2 bulan
+     * terakhir", "3 hari lalu") supaya tidak mencemari draft saat user sebenarnya
+     * cuma bertanya.
+     */
+    private fun captureSlotsFromUserMessage(text: String) {
+        val draft = when (val parsed = TransactionParser.parse(text, keywordSource)) {
+            is ParseResult.Complete      -> parsed.draft
+            is ParseResult.Partial       -> parsed.draft
+            ParseResult.NotATransaction  -> null
+        }
+        if (draft != null) {
+            mergeAiDraft(
+                type         = draft.type,
+                amount       = draft.amount?.takeIf { it >= MIN_CAPTURED_AMOUNT },
+                categoryName = draft.categoryName,
+                walletName   = draft.walletHint?.let { hint -> matchWalletName(hint) },
+                title        = draft.title
+            )
+        }
+
+        // Pesan yang isinya persis nama kategori/dompet — bentuk paling umum
+        // adalah user menekan chip pilihan.
+        val trimmed = text.trim()
+        state().allCategories.find { it.name.equals(trimmed, ignoreCase = true) }
+            ?.let { mergeAiDraft(categoryName = it.name) }
+        state().wallets.find { it.name.equals(trimmed, ignoreCase = true) }
+            ?.let { mergeAiDraft(walletName = it.name) }
+    }
+
+    /** Ringkasan slot terisi yang disisipkan ke system prompt tiap giliran. */
+    private fun slotReminder(): String {
+        if (aiDraft.isEmpty) return ""
+        val fmt   = java.text.NumberFormat.getNumberInstance(java.util.Locale("id", "ID"))
+        val lines = buildList {
+            aiDraft.type?.let { add("- Tipe: ${if (it == "INCOME") "PEMASUKAN" else "PENGELUARAN"}") }
+            aiDraft.amount?.let { add("- Nominal: ${fmt.format(it)}") }
+            aiDraft.categoryName?.let { add("- Kategori: $it") }
+            aiDraft.walletName?.let { add("- Dompet: $it") }
+            aiDraft.title?.let { add("- Judul: $it") }
+        }
+        val skipped = buildList {
+            if (aiDraft.categoryName != null) add("1")
+            if (aiDraft.walletName != null) add("2")
+            if ((aiDraft.amount ?: 0L) > 0L) add("3")
+        }
+        val skipLine = if (skipped.isEmpty()) "" else
+            "\n⛔ LANGKAH ${skipped.joinToString(", ")} SUDAH TERJAWAB — DILARANG menanyakannya lagi " +
+            "dengan kalimat apa pun (termasuk \"Berapa?\")."
+        return """
+
+            ⚠️ SLOT YANG SUDAH DIKETAHUI DI PERCAKAPAN INI (menimpa alur bernomor di atas):
+            ${lines.joinToString("\n            ")}$skipLine
+            Pakai nilai di atas apa adanya, lanjut ke langkah pertama yang BELUM terjawab.
+            Kalau semuanya sudah terisi, langsung Langkah 4 (konfirmasi).
+        """.trimIndent()
+    }
+
+    private fun resetAiDraft() { aiDraft = AiDraft() }
+
+    /**
+     * Pemulihan riwayat chat dan pemuatan data akun berjalan di dua coroutine
+     * terpisah, urutannya tidak dijamin — makanya dipanggil dari keduanya dan
+     * baru bekerja saat dua-duanya siap.
+     */
+    private fun tryPrepareRestoredConfirm() {
+        val confirm = restoredConfirm ?: return
+        if (state().wallets.isEmpty() || state().allCategories.isEmpty()) return
+        restoredConfirm = null
+        if (state().pendingTransaction == null) preparePendingTransaction(confirm)
+    }
+
+    /** Ringkasan konfirmasi yang dirakit aplikasi sendiri, tanpa melibatkan model. */
+    private fun confirmSummaryText(c: ChatOption.TransactionConfirm): String {
+        val fmt       = java.text.NumberFormat.getNumberInstance(java.util.Locale("id", "ID"))
+        val typeLabel = if (c.type == "INCOME") "Pemasukan" else "Pengeluaran"
+        val descLine  = if (c.title.isNotBlank()) "\n📋 Judul    : ${c.title}" else ""
+        return "📋 *Konfirmasi $typeLabel*\n\n" +
+            "💰 Nominal  : Rp ${fmt.format(c.amount)}\n" +
+            "🏷️ Kategori : ${c.category}\n" +
+            "👛 Dompet   : ${c.wallet}$descLine\n\n" +
+            "Sudah benar?"
+    }
+
+    /**
+     * Chip cukup divalidasi "ada di database atau tidak", memakai kedua daftar
+     * kategori. Menyaringnya per tipe di sini justru berbahaya: tipe di aiDraft
+     * masih bisa tebakan parser (default EXPENSE kalau tidak ada kata kerja),
+     * jadi daftar kategori INCOME yang sebenarnya benar bisa ikut terbuang.
+     * Kecocokan tipe ditegakkan di [preparePendingTransaction], saat menyimpan.
+     */
+    private fun sanitizeOption(option: ChatOption?): ChatOption? = ChatSlotResolver.sanitize(
+        option         = option,
+        realWallets    = state().wallets.map { it.name },
+        realCategories = state().allCategories.map { it.name }
+    )
+
+    private fun matchWalletName(input: String): String? {
+        if (input.isBlank()) return null
+        val wallets = state().wallets
+        return (wallets.find { it.name.equals(input, ignoreCase = true) }
+            ?: wallets.find { it.name.contains(input, ignoreCase = true) })?.name
+    }
+
+    /** INCOME/EXPENSE memakai daftar kategorinya sendiri; tipe tak dikenal pakai keduanya. */
+    private fun categoryPoolFor(type: String?): List<CategoryEntity> = when (type) {
+        "INCOME"  -> state().incomeCategories
+        "EXPENSE" -> state().expenseCategories
+        else      -> state().allCategories
+    }
+
+    private fun state() = _uiState.value
+
+    private val ChatUiState.allCategories: List<CategoryEntity>
+        get() = expenseCategories + incomeCategories
+
     // ── Execute AI request ────────────────────────────────────────────────────
-    private fun executeAiRequest(text: String, historySnapshot: List<Pair<String, String>>) {
+    private fun executeAiRequest(
+        text: String,
+        historySnapshot: List<Pair<String, String>>,
+        justCompletedDraft: Boolean = false
+    ) {
         _uiState.update {
             it.copy(isTyping = true, activeModelName = geminiClient.currentModelName)
         }
@@ -538,7 +748,11 @@ private data class Tuple4<A, B, C, D>(val a: A, val b: B, val c: C, val d: D)
             val result = geminiRepo.sendMessage(
                 userMessage  = text,
                 chatHistory  = historySnapshot,
-                systemPrompt = systemPrompt
+                // Dirakit ulang tiap giliran supaya slot yang sudah terkumpul
+                // ikut masuk: blok [CHATFIN_OPTIONS] dibuang dari chatHistory,
+                // jadi ini satu-satunya cara model tetap tahu nominal yang
+                // sudah disebut user di awal percakapan.
+                systemPrompt = buildPrompt()
             )
             currentLoadingId = null
             removeMessage(loadingId)
@@ -559,9 +773,24 @@ private data class Tuple4<A, B, C, D>(val a: A, val b: B, val c: C, val d: D)
                             activeModelName  = geminiClient.currentModelName
                         )
                     }
-                    addMessage(UiMessage(role = "model", text = parsed.text, option = parsed.option))
-                    if (parsed.option is ChatOption.TransactionConfirm) {
-                        preparePendingTransaction(parsed.option)
+                    var option = when (val sanitized = sanitizeOption(parsed.option)) {
+                        is ChatOption.TransactionConfirm -> patchWithDraft(sanitized)
+                        else -> sanitized
+                    }
+                    // Jaring pengaman: pesan barusan melengkapi slot terakhir,
+                    // tapi model tetap tidak mengeluarkan kartu konfirmasi —
+                    // biasanya karena ia mengikuti skrip langkah bernomor dan
+                    // menanyakan sesuatu yang sudah dijawab. Aplikasi yang
+                    // memegang datanya, jadi kartunya dibuat di sini. User tetap
+                    // harus menekan Simpan, tidak ada yang tersimpan diam-diam.
+                    var bodyText = parsed.text
+                    if (justCompletedDraft && option !is ChatOption.TransactionConfirm) {
+                        option   = aiDraft.toConfirm()
+                        bodyText = confirmSummaryText(option)
+                    }
+                    addMessage(UiMessage(role = "model", text = bodyText, option = option))
+                    if (option is ChatOption.TransactionConfirm) {
+                        preparePendingTransaction(option)
                     }
                 },
                 onFailure = { error ->
@@ -645,25 +874,8 @@ private data class Tuple4<A, B, C, D>(val a: A, val b: B, val c: C, val d: D)
     // ── Generate AI confirm ───────────────────────────────────────────────────
     private fun generateAiConfirm(req: AiConfirmRequest) {
         if (!networkMonitor.isCurrentlyConnected()) {
-            val fmt       = java.text.NumberFormat.getNumberInstance(java.util.Locale("id", "ID"))
-            val typeLabel = if (req.type == "INCOME") "Pemasukan" else "Pengeluaran"
-            val descLine  = if (req.desc.isNotBlank()) "\n📋 Judul    : ${req.desc}" else ""
-            val fallback  = ChatOption.TransactionConfirm(
-                type     = req.type,
-                amount   = req.amount,
-                category = req.category,
-                wallet   = req.wallet,
-                title    = req.desc.ifBlank { "${req.category} ${req.wallet}" }
-            )
-            addMessage(UiMessage(
-                role   = "model",
-                text   = "📋 *Konfirmasi $typeLabel*\n\n" +
-                        "💰 Nominal  : Rp ${fmt.format(req.amount)}\n" +
-                        "🏷️ Kategori : ${req.category}\n" +
-                        "👛 Dompet   : ${req.wallet}$descLine\n\n" +
-                        "Sudah benar?",
-                option = fallback
-            ))
+            val fallback = req.toConfirm()
+            addMessage(UiMessage(role = "model", text = confirmSummaryText(fallback), option = fallback))
             preparePendingTransaction(fallback)
             return
         }
@@ -707,36 +919,12 @@ private data class Tuple4<A, B, C, D>(val a: A, val b: B, val c: C, val d: D)
                     if (sanitizedOption is ChatOption.TransactionConfirm) {
                         preparePendingTransaction(sanitizedOption)
                     } else {
-                        val fallback = ChatOption.TransactionConfirm(
-                            type     = req.type,
-                            amount   = req.amount,
-                            category = req.category,
-                            wallet   = req.wallet,
-                            title    = req.desc.ifBlank { "${req.category} ${req.wallet}" }
-                        )
-                        preparePendingTransaction(fallback)
+                        preparePendingTransaction(req.toConfirm())
                     }
                 },
                 onFailure = {
-                    val fmt       = java.text.NumberFormat.getNumberInstance(java.util.Locale("id", "ID"))
-                    val typeLabel = if (req.type == "INCOME") "Pemasukan" else "Pengeluaran"
-                    val descLine  = if (req.desc.isNotBlank()) "\n📋 Judul    : ${req.desc}" else ""
-                    val fallback  = ChatOption.TransactionConfirm(
-                        type     = req.type,
-                        amount   = req.amount,
-                        category = req.category,
-                        wallet   = req.wallet,
-                        title    = req.desc.ifBlank { "${req.category} ${req.wallet}" }
-                    )
-                    addMessage(UiMessage(
-                        role   = "model",
-                        text   = "📋 *Konfirmasi $typeLabel*\n\n" +
-                                "💰 Nominal  : Rp ${fmt.format(req.amount)}\n" +
-                                "🏷️ Kategori : ${req.category}\n" +
-                                "👛 Dompet   : ${req.wallet}$descLine\n\n" +
-                                "Sudah benar?",
-                        option = fallback
-                    ))
+                    val fallback = req.toConfirm()
+                    addMessage(UiMessage(role = "model", text = confirmSummaryText(fallback), option = fallback))
                     preparePendingTransaction(fallback)
                 }
             )
@@ -775,6 +963,7 @@ private data class Tuple4<A, B, C, D>(val a: A, val b: B, val c: C, val d: D)
 
     // ── Option selected ───────────────────────────────────────────────────────
     fun onOptionSelected(option: ChatOption, selectedValue: String) {
+        val answeredIds = _uiState.value.messages.filter { it.option == option }.map { it.id }
         _uiState.update { state ->
             state.copy(
                 messages = state.messages.map { msg ->
@@ -782,6 +971,9 @@ private data class Tuple4<A, B, C, D>(val a: A, val b: B, val c: C, val d: D)
                 }
             )
         }
+        // Ikut dikosongkan di Room — kalau tidak, pertanyaan yang sudah dijawab
+        // muncul lagi sebagai tombol aktif begitu layar chat dibuka ulang.
+        viewModelScope.launch { answeredIds.forEach { chatRepo.clearMessageOption(it) } }
         addMessage(UiMessage(role = "user", text = selectedValue))
 
         // Bot wizard sedang berjalan (WaitCategory/WaitWallet/dll) → lanjutkan
@@ -815,6 +1007,9 @@ private data class Tuple4<A, B, C, D>(val a: A, val b: B, val c: C, val d: D)
                 )
                 _uiState.update { it.copy(pendingTransaction = null) }
                 clearAllOptions()
+                // Transaksi selesai — slot dikosongkan supaya tidak bocor ke
+                // transaksi berikutnya di percakapan yang sama.
+                resetAiDraft()
                 val fmt     = java.text.NumberFormat.getNumberInstance(java.util.Locale("id", "ID"))
                 val now     = LocalTime.now()
                 val timeStr = "%02d:%02d".format(now.hour, now.minute)
@@ -837,6 +1032,7 @@ private data class Tuple4<A, B, C, D>(val a: A, val b: B, val c: C, val d: D)
         addMessage(UiMessage(role = "user", text = "Batal"))
         chatHistory.add("user" to "Batal")
         botStep = BotStep.Idle
+        resetAiDraft()
     }
 
     private fun clearAllOptions() {
@@ -847,6 +1043,7 @@ private data class Tuple4<A, B, C, D>(val a: A, val b: B, val c: C, val d: D)
                 }
             )
         }
+        sessionId?.let { sid -> viewModelScope.launch { chatRepo.clearAllOptions(sid) } }
     }
 
     // ── Clear chat ────────────────────────────────────────────────────────────
@@ -856,6 +1053,7 @@ private data class Tuple4<A, B, C, D>(val a: A, val b: B, val c: C, val d: D)
         chatHistory.clear()
         sessionId?.let { sid -> viewModelScope.launch { chatRepo.clearSession(sid) } }
         botStep                = BotStep.Idle
+        resetAiDraft()
         currentLoadingId       = null
         lastUserMessage        = ""
         lastHistorySnapshot    = emptyList()
@@ -875,10 +1073,28 @@ private data class Tuple4<A, B, C, D>(val a: A, val b: B, val c: C, val d: D)
     }
 
     // ── Prepare pending transaction ───────────────────────────────────────────
+
+    private fun patchWithDraft(confirm: ChatOption.TransactionConfirm) =
+        ChatSlotResolver.patch(confirm, aiDraft)
+
     private fun preparePendingTransaction(confirm: ChatOption.TransactionConfirm) {
-        if (confirm.amount <= 0 || confirm.wallet.isBlank()) return
-        val state   = _uiState.value
-        val allCats = state.expenseCategories + state.incomeCategories
+        val missingSlot = ChatSlotResolver.missingSlot(confirm)
+        if (missingSlot != null) {
+            // Dulu ini `return` senyap: kartu konfirmasi tetap tampil tapi
+            // tombol Simpan mati tanpa penjelasan apa pun.
+            addMessage(UiMessage(
+                role    = "model",
+                text    = "*mengetuk meja* Belum bisa disimpan — $missingSlot. Coba sebutkan lagi ya.",
+                isError = true
+            ))
+            return
+        }
+
+        val state = _uiState.value
+        // Dibatasi ke daftar kategori sesuai tipe transaksi. Tanpa filter ini,
+        // transaksi INCOME bisa tersimpan memakai kategori EXPENSE (kedua daftar
+        // sama-sama punya "Lainnya") dan merusak semua laporan per kategori.
+        val allCats = categoryPoolFor(confirm.type)
         val category = allCats.find { it.name.equals(confirm.category, ignoreCase = true) }
             ?: allCats.find { it.name.contains(confirm.category, ignoreCase = true) }
             ?: allCats.find { confirm.category.contains(it.name, ignoreCase = true) }
@@ -899,6 +1115,13 @@ private data class Tuple4<A, B, C, D>(val a: A, val b: B, val c: C, val d: D)
                     )
                 )
             }
+            mergeAiDraft(
+                type         = confirm.type,
+                amount       = confirm.amount,
+                categoryName = category.name,
+                walletName   = wallet.name,
+                title        = confirm.title
+            )
         } else {
             val missing = buildString {
                 if (category == null) append("kategori '${confirm.category}' tidak dikenali")
@@ -911,12 +1134,20 @@ private data class Tuple4<A, B, C, D>(val a: A, val b: B, val c: C, val d: D)
 
     private fun addMessage(msg: UiMessage) {
         _uiState.update { it.copy(messages = it.messages + msg) }
-        // Bubble loading (typing indicator) & bubble kosong (opsi tanpa teks,
-        // isinya tidak bisa dipulihkan lagi karena ChatOption tidak tersimpan)
-        // sengaja tidak ditulis ke Room.
-        if (!msg.isLoading && msg.text.isNotBlank()) {
-            sessionId?.let { sid ->
-                viewModelScope.launch { chatRepo.saveMessage(sid, msg.role, msg.text, msg.isError) }
+        // Bubble loading (typing indicator) tidak pernah ditulis ke Room.
+        // Pesan tanpa teks TAPI berisi opsi tetap disimpan — isinya justru
+        // tombol pilihan, satu-satunya cara user melanjutkan percakapan.
+        if (msg.isLoading || (msg.text.isBlank() && msg.option == null)) return
+        sessionId?.let { sid ->
+            viewModelScope.launch {
+                chatRepo.saveMessage(
+                    id         = msg.id,
+                    sessionId  = sid,
+                    role       = msg.role,
+                    content    = msg.text,
+                    isError    = msg.isError,
+                    optionJson = ChatOption.encode(msg.option)
+                )
             }
         }
     }

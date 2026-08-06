@@ -30,12 +30,32 @@ package com.sndiy.chatfin.core.parser
  */
 object TransactionParser {
 
+    // CATATAN: "jajan" SENGAJA tidak ada di sini. Kata itu juga terdaftar
+    // sebagai kata kunci kategori exp_food di DefaultKeywords, jadi kalau ikut
+    // dihitung sebagai kata kerja pengeluaran, kalimat pemasukan yang wajar
+    // seperti "saya mendapatkan uang jajan 15rb" akan terdeteksi EXPENSE dengan
+    // confidence 1.0 — dan karena kategorinya ikut ketemu, user tidak pernah
+    // ditawari daftar kategori untuk mengoreksinya. Sebagai kata benda, "jajan"
+    // cukup berperan lewat kamus kategori saja.
     private val expenseVerbs = setOf(
-        "beli", "bayar", "jajan", "habis", "keluar", "keluarin", "belanja", "bayarin", "beliin"
+        "beli", "bayar", "habis", "keluar", "belanja", "spend"
     )
     private val incomeVerbs = setOf(
-        "gaji", "gajian", "terima", "nerima", "dapat", "dapet", "bonus", "masuk", "setor", "nyetor"
+        "gaji", "gajian", "terima", "nerima", "dapat", "dapet", "bonus", "masuk",
+        "setor", "nyetor", "untung", "cuan"
     )
+
+    // Imbuhan yang hanya mengubah bentuk, bukan arah uangnya: "mendapatkan" →
+    // "dapat", "membeli" → "beli", "dapetin" → "dapet". Awalan pasif "di-" dan
+    // "ter-" SENGAJA tidak ikut karena justru membalik arah ("dibayar" =
+    // menerima uang, bukan mengeluarkan).
+    private val verbPrefixes = listOf("meng", "meny", "mem", "men", "nge", "me")
+    private val verbSuffixes = listOf("kan", "in", "nya")
+    private val nasalRestore = mapOf("meng" to "k", "meny" to "s", "mem" to "p", "men" to "t")
+
+    // Kata depan yang lazim mendahului nama dompet ("dari BCA", "pakai GoPay").
+    // "dengan" sengaja tidak ikut karena terlalu sering dipakai untuk hal lain.
+    private val walletPrepositions = setOf("dari", "pakai", "pake", "via", "lewat")
 
     private enum class VerbSignal { EXPENSE, INCOME, AMBIGUOUS, NONE }
 
@@ -46,8 +66,15 @@ object TransactionParser {
         val tokens = trimmed.split(Regex("\\s+"))
         val amountMatch = extractAmount(tokens) ?: return ParseResult.NotATransaction
 
-        val remainingTokens = tokens.filterIndexed { idx, _ ->
+        val afterAmount = tokens.filterIndexed { idx, _ ->
             idx !in amountMatch.startTokenIdx..amountMatch.endTokenIdx
+        }
+
+        // Frasa dompet dibuang dari sisa teks supaya nama dompet tidak ikut
+        // dicocokkan sebagai kata kunci kategori dan tidak mengotori judul.
+        val walletMatch     = extractWalletHint(afterAmount)
+        val remainingTokens = if (walletMatch == null) afterAmount else {
+            afterAmount.filterIndexed { idx, _ -> idx !in walletMatch.startTokenIdx..walletMatch.endTokenIdx }
         }
         val remainingText = remainingTokens.joinToString(" ").trim()
 
@@ -77,7 +104,8 @@ object TransactionParser {
             amount = amountMatch.amount,
             categoryId = categoryMatch?.categoryId,
             categoryName = categoryMatch?.categoryName,
-            title = title
+            title = title,
+            walletHint = walletMatch?.hint
         )
 
         return if (categoryMatch != null) {
@@ -105,35 +133,109 @@ object TransactionParser {
 
     private data class AmountMatch(val amount: Long, val startTokenIdx: Int, val endTokenIdx: Int)
 
+    private data class WalletMatch(val hint: String, val startTokenIdx: Int, val endTokenIdx: Int)
+
     /**
-     * Coba pasangan token berdekatan dulu (menangkap "50 rb", "1.5 jt", "rp 50000"
-     * yang tertulis dengan spasi), baru token tunggal. Karena AmountParser hanya
-     * mengembalikan angka kalau ada digit yang valid, penggabungan token yang
-     * salah tidak akan pernah menghasilkan false-positive (kata+kata tidak
-     * pernah punya digit).
+     * Dua lintasan, bukan satu: lintasan pertama hanya menerima token yang
+     * JELAS nominal uang (berawalan "rp", berakhiran rb/ribu/jt/juta/k, atau
+     * nilainya >= 1000), lintasan kedua baru menerima angka telanjang apa pun.
+     *
+     * Sebelumnya hanya ada satu lintasan "angka pertama yang ketemu menang",
+     * sehingga "beli 2 kopi 30rb" terbaca sebagai transaksi Rp 2 — kuantitas
+     * dikira nominal. Dengan urutan ini, "30rb" menang atas "2" tanpa perlu
+     * mengorbankan kalimat yang memang hanya menyebut angka polos ("kopi 15000").
+     *
+     * Di dalam tiap lintasan, pasangan token berdekatan dicoba lebih dulu
+     * (menangkap "50 rb", "1.5 jt", "rp 50000" yang tertulis dengan spasi) baru
+     * token tunggal. Karena AmountParser hanya mengembalikan angka kalau ada
+     * digit yang valid, penggabungan token yang salah tidak pernah menghasilkan
+     * false-positive (kata+kata tidak pernah punya digit).
      */
-    private fun extractAmount(tokens: List<String>): AmountMatch? {
+    private fun extractAmount(tokens: List<String>): AmountMatch? =
+        findAmount(tokens, explicitOnly = true) ?: findAmount(tokens, explicitOnly = false)
+
+    private fun findAmount(tokens: List<String>, explicitOnly: Boolean): AmountMatch? {
         for (i in tokens.indices) {
             if (i + 1 < tokens.size) {
                 val merged = tokens[i] + tokens[i + 1]
-                AmountParser.parse(merged)?.let { return AmountMatch(it, i, i + 1) }
+                val value  = AmountParser.parse(merged)
+                if (value != null && (!explicitOnly || isExplicitMoney(merged, value))) {
+                    return AmountMatch(value, i, i + 1)
+                }
             }
         }
         for (i in tokens.indices) {
-            AmountParser.parse(tokens[i])?.let { return AmountMatch(it, i, i) }
+            val value = AmountParser.parse(tokens[i])
+            if (value != null && (!explicitOnly || isExplicitMoney(tokens[i], value))) {
+                return AmountMatch(value, i, i)
+            }
         }
         return null
     }
 
+    /** Hanya dipanggil untuk token yang AmountParser sudah berhasil baca. */
+    private fun isExplicitMoney(token: String, value: Long): Boolean {
+        val t = token.lowercase().trim()
+        return t.startsWith("rp") ||
+            t.endsWith("rb") || t.endsWith("ribu") ||
+            t.endsWith("jt") || t.endsWith("juta") || t.endsWith("k") ||
+            value >= 1000L
+    }
+
+    /**
+     * Ambil nama dompet yang disebut lewat kata depan ("... dari BCA",
+     * "... pakai GoPay"). Kata depan TERAKHIR yang dipakai, supaya kalimat
+     * seperti "beli kopi dari warung pakai GoPay" mengambil "GoPay".
+     * Maksimal 3 token supaya tidak menelan sisa kalimat.
+     */
+    private fun extractWalletHint(tokens: List<String>): WalletMatch? {
+        val prepIdx = tokens.indexOfLast { it.lowercase() in walletPrepositions }
+        if (prepIdx == -1 || prepIdx == tokens.lastIndex) return null
+        val endIdx = minOf(prepIdx + 3, tokens.lastIndex)
+        val hint   = tokens.subList(prepIdx + 1, endIdx + 1).joinToString(" ").trim()
+        return if (hint.isBlank()) null else WalletMatch(hint, prepIdx, endIdx)
+    }
+
     private fun detectVerbSignal(tokens: List<String>): VerbSignal {
-        val lowerTokens = tokens.map { it.lowercase() }
-        val hasExpenseVerb = lowerTokens.any { it in expenseVerbs }
-        val hasIncomeVerb = lowerTokens.any { it in incomeVerbs }
+        val roots = tokens.flatMap { verbForms(it) }.toSet()
+        val hasExpenseVerb = roots.any { it in expenseVerbs }
+        val hasIncomeVerb = roots.any { it in incomeVerbs }
         return when {
             hasExpenseVerb && hasIncomeVerb -> VerbSignal.AMBIGUOUS
             hasExpenseVerb -> VerbSignal.EXPENSE
             hasIncomeVerb -> VerbSignal.INCOME
             else -> VerbSignal.NONE
         }
+    }
+
+    /**
+     * Semua bentuk dasar yang mungkin dari satu token, hasil pengupasan awalan
+     * lalu akhiran. Bahasa Indonesia sehari-hari menempelkan imbuhan dengan
+     * bebas ("mendapatkan", "dapetin", "membeli"), sementara pencocokan lama
+     * menuntut token persis sama dengan isi kamus — sehingga "mendapatkan"
+     * tidak pernah terbaca sebagai pemasukan.
+     */
+    private fun verbForms(token: String): Set<String> {
+        val base   = token.lowercase()
+        val stems  = mutableSetOf(base)
+        for (prefix in verbPrefixes) {
+            if (base.length > prefix.length + 2 && base.startsWith(prefix)) {
+                val rest = base.removePrefix(prefix)
+                stems += rest
+                // Peluluhan huruf awal: keluar → mengeluarkan, terima → menerima,
+                // pakai → memakai, setor → menyetor. Kandidat tambahan saja —
+                // bentuk yang tidak masuk akal tidak akan cocok dengan kamus.
+                nasalRestore[prefix]?.let { stems += it + rest }
+            }
+        }
+        val forms = stems.toMutableSet()
+        for (stem in stems) {
+            for (suffix in verbSuffixes) {
+                if (stem.length > suffix.length + 2 && stem.endsWith(suffix)) {
+                    forms += stem.removeSuffix(suffix)
+                }
+            }
+        }
+        return forms
     }
 }

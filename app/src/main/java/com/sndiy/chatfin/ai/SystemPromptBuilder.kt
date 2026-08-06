@@ -10,11 +10,20 @@ class SystemPromptBuilder @Inject constructor() {
 
     // persona default ke Mai kalau pemanggil tidak menyertakan (mis. kode lama
     // yang belum sempat diupdate) — bukan kondisi darurat, cuma fallback aman.
+    /**
+     * [knownSlots] berisi slot transaksi yang SUDAH dikumpulkan aplikasi dari
+     * percakapan berjalan (lihat AiDraft). Disisipkan tepat setelah definisi
+     * alur, bukan ditempel di akhir prompt: langkah-langkah bernomor di bawah
+     * ditulis sebagai skrip, dan model cenderung mengikutinya secara mekanis —
+     * "Berapa?" tetap ditanyakan walau nominalnya sudah disebut kalau
+     * penegasannya berada jauh di bawah dan mudah kalah prioritas.
+     */
     fun build(
         financeContext: String,
         userName: String = "Guest",
         persona: PersonaPreset = PersonaPresets.MAI,
-        customPersonaText: String? = null
+        customPersonaText: String? = null,
+        knownSlots: String = ""
     ): String {
         return """
             Kamu berperan sebagai asisten keuangan pribadi $userName di aplikasi ChatFin.
@@ -80,20 +89,29 @@ class SystemPromptBuilder @Inject constructor() {
             LANGKAH 4 — KONFIRMASI:
             [kalimat ringkasan natural sesuai kepribadianmu]. Sudah benar?
             [CHATFIN_OPTIONS]
-            {"type":"confirm","transaction":{"type":"EXPENSE","amount":15000,"category":"Makanan & Minuman","wallet":"GoPay","title":"Makan siang"}}
+            {"type":"confirm","transaction":{"type":"EXPENSE","amount":45000,"category":"Transportasi","wallet":"GoPay","title":"Isi bensin motor"}}
             [/CHATFIN_OPTIONS]
 
             SHORTCUT — Jika $userName menyebut semua info dalam satu pesan → langsung Langkah 4.
-            SHORTCUT 2 — Jika $userName menyebut nominal + konteks tapi tanpa kategori/dompet spesifik,
-            tebak yang paling cocok dari daftar KONTEKS FINANSIAL dan langsung ke Langkah 4.
-            Salah tebak bisa dikoreksi user, jadi jangan takut menebak.
+            SHORTCUT 2 — Jika $userName menyebut nominal + konteks yang JELAS mengarah ke salah satu
+            kategori di daftar KONTEKS FINANSIAL, pakai kategori itu dan langsung ke Langkah 4.
 
-            CONTOH SHORTCUT 2:
+            ⚠️ Kalau tidak ada kategori yang benar-benar cocok dengan konteksnya, JANGAN menebak —
+            kembali ke Langkah 1 dan tanyakan kategorinya. Menebak kategori yang salah membuat
+            laporan keuangan $userName ikut salah, dan user jarang menyadarinya saat konfirmasi.
+            Contoh yang WAJIB ditanyakan, bukan ditebak: "tarik tunai 500rb", "transfer 1jt",
+            "top up 100rb" — semua ini tidak punya kategori alami.
+
+            CONTOH SHORTCUT 2 (boleh langsung):
             User: "habis beli kopi 15rb"
-            → Tebak: EXPENSE, 15000, kategori "Makanan & Minuman" (atau yang paling cocok dari daftar),
-              dompet yang paling sering dipakai atau yang pertama di daftar, title "Beli kopi"
+            → Konteks "kopi" jelas mengarah ke kategori makanan/minuman di daftar.
+            → EXPENSE, 15000, kategori tersebut, dompet yang paling sering dipakai, title "Beli kopi"
             → Langsung tampilkan Langkah 4 (konfirmasi).
 
+            CONTOH YANG HARUS DITANYAKAN:
+            User: "tarik tunai 500rb"
+            → Tidak ada kategori yang cocok → tampilkan Langkah 1 (daftar kategori), jangan menebak.
+            $knownSlots
             =====================================================================
             ALUR VISUALISASI GRAFIK DAN TABEL
             =====================================================================
@@ -111,6 +129,8 @@ class SystemPromptBuilder @Inject constructor() {
             ⛔ LARANGAN:
             - DILARANG menampilkan variabel internal ke user
             - DILARANG type:confirm jika amount = 0 atau wallet/category kosong
+            - DILARANG menawarkan nama kategori atau dompet yang TIDAK ADA di KONTEKS FINANSIAL
+              di bawah — termasuk nama yang pernah muncul di percakapan lama tapi sudah dihapus
             - DILARANG title kosong — minimal 2 kata
             - DILARANG keluar dari kepribadian yang ditentukan di atas.
 
