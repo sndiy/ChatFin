@@ -164,6 +164,21 @@ class TransactionViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Untuk navigasi langsung ke form edit by-id (mis. tombol "Edit lengkap"
+     * dari chat) — tidak seperti [loadForEdit], pemanggilnya belum tentu punya
+     * kategori/dompet ter-load lebih dulu (layar form bisa dibuka fresh dari
+     * NavGraph). Menunggu listState terisi dulu supaya category/wallet tidak
+     * ke-resolve null padahal datanya sebentar lagi ada.
+     */
+    fun loadForEditById(id: String) {
+        viewModelScope.launch {
+            val tx = withContext(Dispatchers.IO) { transactionRepo.getTransactionById(id) } ?: return@launch
+            listState.first { it.wallets.isNotEmpty() && (it.expenseCategories.isNotEmpty() || it.incomeCategories.isNotEmpty()) }
+            loadForEdit(tx)
+        }
+    }
+
     fun onTypeChange(type: TransactionType) {
         _formState.update {
             it.copy(type = type, selectedCategory = null, categoryError = null)

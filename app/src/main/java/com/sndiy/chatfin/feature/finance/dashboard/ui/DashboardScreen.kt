@@ -544,6 +544,7 @@ private fun WalletsSection(wallets: List<WalletEntity>) {
 private fun TransactionItem(tx: TransactionDisplay) {
     val fmt = NumberFormat.getNumberInstance(Locale("id", "ID"))
     val isReceipt = tx.receiptImageUri != null || tx.note?.contains("Struk", ignoreCase = true) == true
+    val isTransfer = tx.type == "TRANSFER"
 
     val dateTimeText = remember(tx.date, tx.time) {
         try {
@@ -578,15 +579,31 @@ private fun TransactionItem(tx: TransactionDisplay) {
                     modifier = Modifier
                         .size(40.dp)
                         .clip(CircleShape)
-                        .background((if (tx.type == "INCOME") IncomeGreen else if (isReceipt) MaterialTheme.colorScheme.primary else ExpenseRed).copy(alpha = 0.12f)),
+                        .background(
+                            (when {
+                                tx.type == "INCOME" -> IncomeGreen
+                                isTransfer           -> MaterialTheme.colorScheme.primary
+                                isReceipt            -> MaterialTheme.colorScheme.primary
+                                else                  -> ExpenseRed
+                            }).copy(alpha = 0.12f)
+                        ),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        if (isReceipt) Icons.Default.ReceiptLong else if (tx.type == "INCOME") Icons.Default.TrendingUp else Icons.Default.TrendingDown,
-                        contentDescription = null,
-                        tint = if (tx.type == "INCOME") IncomeGreen else if (isReceipt) MaterialTheme.colorScheme.primary else ExpenseRed,
-                        modifier = Modifier.size(20.dp)
-                    )
+                    if (isTransfer) {
+                        Text(
+                            "↔",
+                            style      = MaterialTheme.typography.titleMedium,
+                            color      = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Bold
+                        )
+                    } else {
+                        Icon(
+                            if (isReceipt) Icons.Default.ReceiptLong else if (tx.type == "INCOME") Icons.Default.TrendingUp else Icons.Default.TrendingDown,
+                            contentDescription = null,
+                            tint = if (tx.type == "INCOME") IncomeGreen else if (isReceipt) MaterialTheme.colorScheme.primary else ExpenseRed,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                 }
                 Column(
                     modifier            = Modifier.weight(1f),
@@ -650,10 +667,10 @@ private fun TransactionItem(tx: TransactionDisplay) {
                 }
             }
             Text(
-                "${if (tx.type == "INCOME") "+" else "-"}Rp ${fmt.format(tx.amount)}",
+                "${if (tx.type == "INCOME") "+" else if (isTransfer) "" else "-"}Rp ${fmt.format(tx.amount)}",
                 fontWeight = FontWeight.Bold,
                 style      = MaterialTheme.typography.bodyLarge,
-                color      = if (tx.type == "INCOME") IncomeGreen else ExpenseRed
+                color      = if (tx.type == "INCOME") IncomeGreen else if (isTransfer) MaterialTheme.colorScheme.primary else ExpenseRed
             )
         }
     }

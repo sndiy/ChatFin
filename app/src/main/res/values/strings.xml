@@ -31,6 +31,20 @@
     <string name="apikey_save_success">API key berhasil disimpan dan aktif.</string>
     <string name="apikey_clear_success">API key dihapus. Mai kembali ke Mode Bot.</string>
 
+    <!-- Perbaiki dengan AI (Popup Edit Hasil Scan Struk) -->
+    <string name="receipt_ai_enhance_button">Perbaiki dengan AI</string>
+    <string name="receipt_ai_enhancing">Menganalisis struk (2-5 detik)…</string>
+    <string name="receipt_ai_hint_default">AI membaca ulang struk untuk membedakan subtotal, diskon, pajak, dan total akhir.</string>
+    <string name="receipt_ai_hint_offline">Perlu koneksi internet untuk memakai fitur ini.</string>
+    <string name="receipt_ai_hint_no_key">Aktifkan AI dulu di Setelan → API Key.</string>
+    <string name="receipt_ai_enhanced_badge">Diperbaiki AI</string>
+    <string name="receipt_ai_error_no_key">API key belum diset. Aktifkan di Setelan → API Key.</string>
+    <string name="receipt_ai_error_quota">Kuota AI harian sudah habis, hasil OCR biasa tetap dipakai.</string>
+    <string name="receipt_ai_error_timeout">AI tidak merespons, hasil OCR biasa tetap dipakai.</string>
+    <string name="receipt_ai_error_network">Koneksi internet tidak stabil, hasil OCR biasa tetap dipakai.</string>
+    <string name="receipt_ai_error_parse">AI gagal membaca struk ini, hasil OCR biasa tetap dipakai.</string>
+    <string name="receipt_ai_error_image">Gagal memuat gambar struk untuk dikirim ke AI.</string>
+
     <!-- Layar Kepribadian AI (Setelan → Kepribadian AI) -->
     <string name="persona_title">Kepribadian AI</string>
     <string name="persona_menu_title">Kepribadian AI</string>
@@ -82,4 +96,34 @@
     <string name="chart_export_failed">Gagal menyimpan gambar chart.</string>
     <string name="chart_download_btn">Download PNG</string>
     <string name="table_download_btn">Download PNG</string>
+
+    <!-- Kontrol Transaksi via Chat (kartu daftar, edit cepat, hapus) -->
+    <string name="chat_tx_card_title">Transaksi %1$s</string>
+    <string name="chat_tx_card_empty">Tidak ada transaksi di periode ini.</string>
+    <string name="chat_tx_card_filter">Filter: %1$s</string>
+    <string name="chat_tx_card_more">+%1$d transaksi lainnya — buka Riwayat untuk lihat semua.</string>
+    <string name="chat_tx_edit_action">Edit transaksi</string>
+    <string name="chat_tx_delete_action">Hapus transaksi</string>
+
+    <string name="chat_tx_delete_title_large">⚠️ Hapus Transaksi Besar?</string>
+    <string name="chat_tx_delete_title">Hapus Transaksi?</string>
+    <string name="chat_tx_delete_body_large">Transaksi ini bernilai Rp %1$s.\nSaldo dompet akan dikembalikan. Tindakan ini tidak bisa dibatalkan.</string>
+    <string name="chat_tx_delete_body">Saldo dompet akan dikembalikan. Tindakan ini tidak bisa dibatalkan.</string>
+    <string name="chat_tx_delete_confirm">Ya, Hapus</string>
+
+    <string name="quick_edit_title">Edit Cepat</string>
+    <string name="quick_edit_full_edit">Edit lengkap</string>
+    <string name="quick_edit_expense">Pengeluaran</string>
+    <string name="quick_edit_income">Pemasukan</string>
+    <string name="quick_edit_amount_error">Masukkan nominal terlebih dahulu</string>
+    <string name="quick_edit_category_error">Kategori — pilih dulu</string>
+    <string name="quick_edit_category_label">Kategori</string>
+    <string name="quick_edit_wallet_label">Dompet</string>
+    <string name="quick_edit_date_label">Tanggal</string>
+    <string name="quick_edit_date_ok">OK</string>
+    <string name="quick_edit_date_cancel">Batal</string>
+    <string name="quick_edit_save">Simpan Perubahan</string>
+
+    <string name="transaction_form_title_add">Tambah Transaksi</string>
+    <string name="transaction_form_title_edit">Edit Transaksi</string>
 </resources>

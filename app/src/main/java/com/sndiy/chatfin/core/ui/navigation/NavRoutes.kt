@@ -22,9 +22,13 @@ sealed class Screen(val route: String) {
     data object WalletForm : Screen("wallet_form/{walletId}") {
         fun createRoute(walletId: String = "new") = "wallet_form/$walletId"
     }
+    data object Transfer : Screen("transfer")
 
     data object CategoryList    : Screen("category_list")
-    data object TransactionForm : Screen("transaction_form")
+    data object TransactionForm : Screen("transaction_form?transactionId={transactionId}") {
+        fun createRoute(transactionId: String? = null) =
+            if (transactionId != null) "transaction_form?transactionId=$transactionId" else "transaction_form"
+    }
     data object ReceiptScanner  : Screen("receipt_scanner")
     data object BudgetList      : Screen("budget_list")
     data object Export          : Screen("export")

@@ -3,9 +3,13 @@ package com.sndiy.chatfin.feature.finance.receipt.ui
 import android.content.Context
 import android.graphics.Bitmap
 import android.net.Uri
+import androidx.annotation.StringRes
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.mlkit.vision.common.InputImage
+import com.sndiy.chatfin.ai.GeminiClient
+import com.sndiy.chatfin.ai.ReceiptAiEnhancer
+import com.sndiy.chatfin.ai.ReceiptAiResult
 import com.sndiy.chatfin.core.data.local.entity.CategoryEntity
 import com.sndiy.chatfin.core.data.local.entity.TransactionEntity
 import com.sndiy.chatfin.core.data.local.entity.WalletEntity
@@ -14,6 +18,7 @@ import com.sndiy.chatfin.core.ocr.OcrAnalysisResult
 import com.sndiy.chatfin.core.ocr.ParsedReceipt
 import com.sndiy.chatfin.core.ocr.ReceiptOcrEngine
 import com.sndiy.chatfin.core.ocr.TextBoundingBox
+import com.sndiy.chatfin.core.utils.NetworkMonitor
 import com.sndiy.chatfin.feature.finance.account.data.repository.AccountRepository
 import com.sndiy.chatfin.feature.finance.transaction.data.repository.CategoryRepository
 import com.sndiy.chatfin.feature.finance.transaction.data.repository.TransactionRepository
@@ -40,7 +45,11 @@ data class ReceiptScannerUiState(
     val wallets: List<WalletEntity> = emptyList(),
     val categories: List<CategoryEntity> = emptyList(),
     val isSaved: Boolean = false,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val isOnline: Boolean = true,
+    val isAiKeyAvailable: Boolean = false,
+    val isAiEnhancing: Boolean = false,
+    @StringRes val aiErrorRes: Int? = null
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -51,7 +60,10 @@ class ReceiptScannerViewModel @Inject constructor(
     private val transactionRepo: TransactionRepository,
     private val walletRepo: WalletRepository,
     private val categoryRepo: CategoryRepository,
-    private val accountRepo: AccountRepository
+    private val accountRepo: AccountRepository,
+    private val networkMonitor: NetworkMonitor,
+    private val geminiClient: GeminiClient,
+    private val receiptAiEnhancer: ReceiptAiEnhancer
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ReceiptScannerUiState())
@@ -78,6 +90,20 @@ class ReceiptScannerViewModel @Inject constructor(
                         it.copy(wallets = wallets, categories = categories)
                     }
                 }
+        }
+
+        viewModelScope.launch {
+            networkMonitor.isConnected.collect { online ->
+                _uiState.update { it.copy(isOnline = online) }
+            }
+        }
+    }
+
+    /** Dibaca ulang tiap popup edit dibuka supaya key yang baru diisi user di Setelan langsung terdeteksi. */
+    fun refreshAiAvailability() {
+        viewModelScope.launch {
+            val hasKey = geminiClient.resolveApiKey().isNotBlank()
+            _uiState.update { it.copy(isAiKeyAvailable = hasKey) }
         }
     }
 
@@ -131,6 +157,7 @@ class ReceiptScannerViewModel @Inject constructor(
                         receiptImageUri = savedUri ?: sourceUri.toString()
                     )
                 }
+                refreshAiAvailability()
             } catch (e: Exception) {
                 _uiState.update {
                     it.copy(
@@ -164,6 +191,7 @@ class ReceiptScannerViewModel @Inject constructor(
                         receiptImageUri = savedUri
                     )
                 }
+                refreshAiAvailability()
             } catch (e: Exception) {
                 _uiState.update {
                     it.copy(
@@ -179,8 +207,46 @@ class ReceiptScannerViewModel @Inject constructor(
         _uiState.update {
             it.copy(
                 parsedReceipt = null,
-                errorMessage = null
+                errorMessage = null,
+                isAiEnhancing = false,
+                aiErrorRes = null
             )
+        }
+    }
+
+    fun dismissAiError() {
+        _uiState.update { it.copy(aiErrorRes = null) }
+    }
+
+    /**
+     * Lapisan kedua opsional: kirim gambar struk yang sudah tersimpan ke Gemini supaya
+     * subtotal/diskon/pajak/total dibedakan dengan konteks, bukan cuma OCR karakter.
+     * Hanya berjalan saat user menekan tombol secara eksplisit — bukan otomatis di tiap scan.
+     */
+    fun enhanceWithAi() {
+        val current = _uiState.value
+        // Anti double-tap: satu request berjalan pada satu waktu, mencegah retry
+        // tak sengaja yang bisa memboroskan kuota harian user.
+        if (current.isAiEnhancing) return
+        val baseline = current.parsedReceipt ?: return
+        val imageUri = current.receiptImageUri ?: return
+
+        _uiState.update { it.copy(isAiEnhancing = true, aiErrorRes = null) }
+
+        viewModelScope.launch {
+            when (val result = receiptAiEnhancer.enhance(context, imageUri, baseline)) {
+                is ReceiptAiResult.Success -> {
+                    _uiState.update {
+                        it.copy(isAiEnhancing = false, parsedReceipt = result.receipt)
+                    }
+                }
+                is ReceiptAiResult.Failure -> {
+                    // Gagal (kuota/timeout/parse) → tetap pakai hasil ML Kit yang sudah ada.
+                    _uiState.update {
+                        it.copy(isAiEnhancing = false, aiErrorRes = result.messageRes)
+                    }
+                }
+            }
         }
     }
 

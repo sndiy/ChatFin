@@ -52,6 +52,7 @@ data class WalletFormState(
 fun WalletListScreen(
     onNavigateBack: () -> Unit,
     onNavigateToAdd: () -> Unit,
+    onNavigateToTransfer: () -> Unit,
     viewModel: TransactionViewModel = hiltViewModel()
 ) {
     val listState by viewModel.listState.collectAsStateWithLifecycle()
@@ -64,6 +65,11 @@ fun WalletListScreen(
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, "Kembali")
+                    }
+                },
+                actions = {
+                    IconButton(onClick = onNavigateToTransfer) {
+                        Icon(Icons.Default.SwapHoriz, "Transfer saldo")
                     }
                 }
             )

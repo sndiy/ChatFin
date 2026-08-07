@@ -21,7 +21,10 @@ import com.sndiy.chatfin.core.ui.theme.MaiPurple
 import kotlinx.coroutines.delay
 
 @Composable
-fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
+fun ChatScreen(
+    onNavigateToEditTransaction: (String) -> Unit = {},
+    viewModel: ChatViewModel = hiltViewModel()
+) {
     val uiState           by viewModel.uiState.collectAsStateWithLifecycle()
     val isCheckingNetwork by viewModel.isCheckingNetwork.collectAsStateWithLifecycle()
     val clipboardManager  = LocalClipboardManager.current
@@ -51,7 +54,19 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
             val msg = uiState.messages.find { it.id == messageId }
             if (msg != null) viewModel.setReplyingMessage(msg)
         },
-        onCancelReply        = viewModel::clearReplyingMessage
+        onCancelReply        = viewModel::clearReplyingMessage,
+        onEditTransactionQuick     = viewModel::requestQuickEdit,
+        onDeleteTransactionRequest = viewModel::requestDeleteTransaction,
+        deleteConfirmTransaction   = uiState.deleteConfirmTransaction,
+        onConfirmDeleteTransaction = viewModel::confirmDeleteTransaction,
+        onDismissDeleteConfirm     = viewModel::dismissDeleteConfirm,
+        quickEditTransaction       = uiState.quickEditTransaction,
+        expenseCategories          = uiState.expenseCategories,
+        incomeCategories           = uiState.incomeCategories,
+        wallets                    = uiState.wallets,
+        onSaveQuickEdit            = viewModel::saveQuickEdit,
+        onDismissQuickEdit         = viewModel::dismissQuickEdit,
+        onFullEditTransaction      = onNavigateToEditTransaction
     )
 }
 
@@ -74,7 +89,19 @@ private fun ChatScreenContent(
     onEditMessage: (String, String) -> Unit,
     onDeleteMessage: (String) -> Unit,
     onReplyMessage: (String, String) -> Unit,
-    onCancelReply: () -> Unit
+    onCancelReply: () -> Unit,
+    onEditTransactionQuick: (com.sndiy.chatfin.core.data.local.entity.TransactionEntity) -> Unit,
+    onDeleteTransactionRequest: (com.sndiy.chatfin.core.data.local.entity.TransactionEntity) -> Unit,
+    deleteConfirmTransaction: com.sndiy.chatfin.core.data.local.entity.TransactionEntity?,
+    onConfirmDeleteTransaction: () -> Unit,
+    onDismissDeleteConfirm: () -> Unit,
+    quickEditTransaction: com.sndiy.chatfin.core.data.local.entity.TransactionEntity?,
+    expenseCategories: List<com.sndiy.chatfin.core.data.local.entity.CategoryEntity>,
+    incomeCategories: List<com.sndiy.chatfin.core.data.local.entity.CategoryEntity>,
+    wallets: List<com.sndiy.chatfin.core.data.local.entity.WalletEntity>,
+    onSaveQuickEdit: (String, Long, String, String, java.time.LocalDate) -> Unit,
+    onDismissQuickEdit: () -> Unit,
+    onFullEditTransaction: (String) -> Unit
 ) {
     val listState = rememberLazyListState()
     var showClearDialog by remember { mutableStateOf(false) }
@@ -97,6 +124,34 @@ private fun ChatScreenContent(
                 onClearChat()
             },
             onDismiss = { showClearDialog = false }
+        )
+    }
+
+    deleteConfirmTransaction?.let { tx ->
+        val fmt     = java.text.NumberFormat.getNumberInstance(java.util.Locale("id", "ID"))
+        val isLarge = tx.amount >= 500_000
+        com.sndiy.chatfin.core.ui.component.ConfirmDestructiveDialog(
+            title             = stringResource(if (isLarge) R.string.chat_tx_delete_title_large else R.string.chat_tx_delete_title),
+            body              = if (isLarge)
+                stringResource(R.string.chat_tx_delete_body_large, fmt.format(tx.amount))
+            else
+                stringResource(R.string.chat_tx_delete_body),
+            confirmLabel      = stringResource(R.string.chat_tx_delete_confirm),
+            useErrorContainer = isLarge,
+            onConfirm         = onConfirmDeleteTransaction,
+            onDismiss         = onDismissDeleteConfirm
+        )
+    }
+
+    quickEditTransaction?.let { tx ->
+        QuickEditTransactionSheet(
+            transaction       = tx,
+            expenseCategories = expenseCategories,
+            incomeCategories  = incomeCategories,
+            wallets           = wallets,
+            onSave            = onSaveQuickEdit,
+            onDismiss         = onDismissQuickEdit,
+            onFullEdit        = onFullEditTransaction
         )
     }
 
@@ -183,18 +238,22 @@ private fun ChatScreenContent(
                                         onReplyMessage  = onReplyMessage
                                     )
                                     else -> AiMessageBubble(
-                                        messageId            = message.id,
-                                        text                 = message.text,
-                                        option               = message.option,
-                                        isError              = message.isError,
-                                        transactions         = uiState.transactions,
-                                        pendingTransaction   = uiState.pendingTransaction,
-                                        onOptionSelected     = { value -> onOptionSelected(message.option!!, value) },
-                                        onConfirmTransaction = onConfirmTransaction,
-                                        onCancelTransaction  = onCancelTransaction,
-                                        onCopyText           = onCopyText,
-                                        onDeleteMessage      = onDeleteMessage,
-                                        onReplyMessage       = onReplyMessage
+                                        messageId              = message.id,
+                                        text                   = message.text,
+                                        option                 = message.option,
+                                        isError                = message.isError,
+                                        transactions           = uiState.transactions,
+                                        categories             = uiState.expenseCategories + uiState.incomeCategories,
+                                        wallets                = uiState.wallets,
+                                        pendingTransaction     = uiState.pendingTransaction,
+                                        onOptionSelected       = { value -> onOptionSelected(message.option!!, value) },
+                                        onConfirmTransaction   = onConfirmTransaction,
+                                        onCancelTransaction    = onCancelTransaction,
+                                        onEditTransactionQuick = onEditTransactionQuick,
+                                        onDeleteTransactionRequest = onDeleteTransactionRequest,
+                                        onCopyText             = onCopyText,
+                                        onDeleteMessage        = onDeleteMessage,
+                                        onReplyMessage         = onReplyMessage
                                     )
                                 }
                             }

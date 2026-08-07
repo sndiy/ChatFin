@@ -1,5 +1,6 @@
 package com.sndiy.chatfin.ai
 
+import com.sndiy.chatfin.core.parser.TransactionQueryParser
 import kotlinx.serialization.Serializable
 import org.json.JSONObject
 import javax.inject.Inject
@@ -37,6 +38,22 @@ sealed class ChatOption {
     data class TableRequest(
         val title: String = "Tabel Keuangan",
         val initialTemplate: String = "CATEGORY_SUMMARY"
+    ) : ChatOption()
+    /** Kartu daftar transaksi periode tertentu. Dibuat dari parser lokal
+     *  ([com.sndiy.chatfin.core.parser.TransactionQueryParser]), bukan dari AI —
+     *  tanggal disimpan sebagai String "yyyy-MM-dd" supaya tetap serializable. */
+    @Serializable
+    data class TransactionListResult(
+        val periodLabel: String,
+        val startDate: String,
+        val endDate: String,
+        /** null = pakai batas default kartu. Punya default supaya baris chat
+         *  lama (yang tersimpan sebelum field ini ada) tetap bisa didecode. */
+        val limit: Int? = null,
+        /** Filter opsional; null = tidak disaring pada dimensi itu. */
+        val categoryName: String? = null,
+        val walletName: String? = null,
+        val type: String? = null
     ) : ChatOption()
 
     companion object {
@@ -95,6 +112,10 @@ class ChatOptionsParser @Inject constructor() {
         """\{[^{}]*"type"\s*:\s*"table"[^{}]*\}""",
         setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
     )
+    private val rawTransactionsPattern = Regex(
+        """\{[^{}]*"type"\s*:\s*"transactions"[^{}]*\}""",
+        setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
+    )
 
     fun parse(rawMessage: String): ParsedMessage {
         // 1. Coba tag normal dulu
@@ -112,6 +133,7 @@ class ChatOptionsParser @Inject constructor() {
             ?: rawWalletPattern.find(rawMessage)
             ?: rawChartPattern.find(rawMessage)
             ?: rawTablePattern.find(rawMessage)
+            ?: rawTransactionsPattern.find(rawMessage)
 
         if (fallbackMatch != null) {
             val text   = rawMessage.replace(fallbackMatch.value, "").trim()
@@ -156,6 +178,22 @@ class ChatOptionsParser @Inject constructor() {
                     title = obj.optString("title", "Tabel Keuangan"),
                     initialTemplate = obj.optString("template", "CATEGORY_SUMMARY").uppercase()
                 )
+                // Kartu daftar transaksi yang diminta AI sendiri. Ini jalur untuk
+                // kalimat yang cuma bisa dipahami dari konteks percakapan
+                // ("oke tampilkan" sesudah Mai menawarkannya) — pencocokan kata
+                // kunci di TransactionQueryParser mustahil menangkap itu.
+                "transactions" -> {
+                    val q = TransactionQueryParser.fromKeyword(obj.optString("period", "THIS_MONTH"))
+                    ChatOption.TransactionListResult(
+                        periodLabel  = q.periodLabel,
+                        startDate    = q.startDate.toString(),
+                        endDate      = q.endDate.toString(),
+                        limit        = q.limit,
+                        categoryName = obj.optString("category").ifBlank { null },
+                        walletName   = obj.optString("wallet").ifBlank { null },
+                        type         = obj.optString("txType").ifBlank { null }?.uppercase()
+                    )
+                }
                 else -> null
             }
         } catch (e: Exception) {

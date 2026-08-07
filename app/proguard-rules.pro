@@ -37,3 +37,20 @@
     public static *** d(...);
     public static *** i(...);
 }
+
+# ============================================================================
+#  OkHttp + kotlinx.serialization (panggilan REST Gemini, ai/GeminiClient.kt)
+# ============================================================================
+# Sebelumnya dependency ini masuk transitif lewat SDK generativeai yang sudah
+# membawa consumer-rules sendiri. Sejak migrasi ke OkHttp langsung, project ini
+# butuh aturan sendiri supaya release build (isMinifyEnabled=true) tidak diam-
+# diam merusak serialisasi DTO Gemini atau memicu warning R8 pada kelas
+# opsional yang direferensikan OkHttp (provider TLS yang tidak dipakai di
+# Android — Conscrypt/BouncyCastle/OpenJSSE).
+-dontwarn okhttp3.internal.platform.**
+-dontwarn org.conscrypt.**
+-dontwarn org.bouncycastle.**
+-dontwarn org.openjsse.**
+-keepattributes *Annotation*, InnerClasses
+-keep,includedescriptorclasses class com.sndiy.chatfin.ai.Gemini* { *; }
+-keep,includedescriptorclasses class com.sndiy.chatfin.ai.Gemini*$serializer { *; }

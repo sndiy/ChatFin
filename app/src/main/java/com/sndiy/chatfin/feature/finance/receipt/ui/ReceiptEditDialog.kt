@@ -16,10 +16,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.sndiy.chatfin.R
 import com.sndiy.chatfin.core.data.local.entity.CategoryEntity
 import com.sndiy.chatfin.core.data.local.entity.WalletEntity
 import com.sndiy.chatfin.core.ocr.ParsedReceipt
@@ -55,6 +57,12 @@ fun ReceiptEditDialog(
         itemsSummary: String,
         itemsList: List<ParsedReceiptItem>
     ) -> Unit,
+    isOnline: Boolean = true,
+    isAiKeyAvailable: Boolean = false,
+    isAiEnhancing: Boolean = false,
+    aiErrorRes: Int? = null,
+    onEnhanceWithAi: () -> Unit = {},
+    onDismissAiError: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val rupiahFmt = remember { NumberFormat.getNumberInstance(Locale("id", "ID")) }
@@ -118,11 +126,22 @@ fun ReceiptEditDialog(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column {
-                    Text(
-                        text = "Konfirmasi & Edit Struk",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "Konfirmasi & Edit Struk",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold
+                        )
+                        if (parsedReceipt.isAiEnhanced) {
+                            Spacer(modifier = Modifier.width(8.dp))
+                            AssistChip(
+                                onClick = {},
+                                enabled = false,
+                                label = { Text(stringResource(R.string.receipt_ai_enhanced_badge), style = MaterialTheme.typography.labelSmall) },
+                                leadingIcon = { Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(14.dp)) }
+                            )
+                        }
+                    }
                     Text(
                         text = "Periksa dan lengkapi data struk sebelum disimpan",
                         style = MaterialTheme.typography.bodySmall,
@@ -131,6 +150,69 @@ fun ReceiptEditDialog(
                 }
                 IconButton(onClick = onDismiss) {
                     Icon(Icons.Default.Close, contentDescription = "Tutup")
+                }
+            }
+
+            // Perbaiki dengan AI — lapisan kedua opsional, hanya jalan saat ditekan & online
+            Column {
+                OutlinedButton(
+                    onClick = onEnhanceWithAi,
+                    enabled = isOnline && isAiKeyAvailable && !isAiEnhancing,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    if (isAiEnhancing) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(stringResource(R.string.receipt_ai_enhancing))
+                    } else {
+                        Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(stringResource(R.string.receipt_ai_enhance_button))
+                    }
+                }
+                val hintRes = when {
+                    !isOnline -> R.string.receipt_ai_hint_offline
+                    !isAiKeyAvailable -> R.string.receipt_ai_hint_no_key
+                    else -> R.string.receipt_ai_hint_default
+                }
+                Text(
+                    text = stringResource(hintRes),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp, start = 4.dp)
+                )
+            }
+
+            // Pesan error/fallback AI (kuota, timeout, gagal parse) — hasil ML Kit tetap dipakai
+            if (aiErrorRes != null) {
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.7f)
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Info,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(
+                            text = stringResource(aiErrorRes),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            modifier = Modifier.weight(1f)
+                        )
+                        IconButton(onClick = onDismissAiError, modifier = Modifier.size(24.dp)) {
+                            Icon(Icons.Default.Close, contentDescription = "Tutup", modifier = Modifier.size(16.dp))
+                        }
+                    }
                 }
             }
 

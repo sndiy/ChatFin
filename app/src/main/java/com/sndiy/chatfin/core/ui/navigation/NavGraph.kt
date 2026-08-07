@@ -39,6 +39,7 @@ import com.sndiy.chatfin.feature.finance.transaction.ui.QuickAddResult
 import com.sndiy.chatfin.feature.finance.transaction.ui.TransactionFormScreen
 import com.sndiy.chatfin.feature.finance.transaction.ui.TransactionListScreen
 import com.sndiy.chatfin.feature.finance.transaction.ui.TransactionViewModel
+import com.sndiy.chatfin.feature.finance.transaction.ui.TransferScreen
 import com.sndiy.chatfin.feature.finance.transaction.ui.WalletFormScreen
 import com.sndiy.chatfin.feature.finance.transaction.ui.WalletListScreen
 import com.sndiy.chatfin.feature.onboarding.ui.OnboardingScreen
@@ -164,18 +165,34 @@ fun ChatFinNavGraph(
                     onNavigateToReceiptScan = { navController.navigate(Screen.ReceiptScanner.route) }
                 )
             }
-            composable(Screen.Chat.route)           { ChatScreen() }
+            composable(Screen.Chat.route) {
+                ChatScreen(
+                    onNavigateToEditTransaction = { id -> navController.navigate(Screen.TransactionForm.createRoute(id)) }
+                )
+            }
             composable(Screen.Settings.route)        { SettingsScreen(navController = navController) }
             composable(Screen.TransactionList.route) {
                 TransactionListScreen(
                     onNavigateBack          = { navController.popBackStack() },
-                    onNavigateToAdd         = { navController.navigate(Screen.TransactionForm.route) },
+                    onNavigateToAdd         = { navController.navigate(Screen.TransactionForm.createRoute()) },
                     onNavigateToReceiptScan = { navController.navigate(Screen.ReceiptScanner.route) }
                 )
             }
 
             // ── Standalone screens ────────────────────────────────────────────
-            composable(Screen.TransactionForm.route) { TransactionFormScreen(onNavigateBack = { navController.popBackStack() }) }
+            composable(
+                route     = Screen.TransactionForm.route,
+                arguments = listOf(navArgument("transactionId") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                })
+            ) { backStackEntry ->
+                TransactionFormScreen(
+                    transactionId  = backStackEntry.arguments?.getString("transactionId"),
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
             composable(Screen.ReceiptScanner.route)  { com.sndiy.chatfin.feature.finance.receipt.ui.ReceiptScannerScreen(onNavigateBack = { navController.popBackStack() }) }
             composable(Screen.BudgetList.route)      { BudgetScreen(onNavigateBack = { navController.popBackStack() }) }
             composable(Screen.Export.route)           { ExportScreen(onNavigateBack = { navController.popBackStack() }) }
@@ -191,10 +208,17 @@ fun ChatFinNavGraph(
                 AccountFormScreen(accountId = backStackEntry.arguments?.getString("accountId") ?: "new", onNavigateBack = { navController.popBackStack() })
             }
             composable(Screen.WalletList.route) {
-                WalletListScreen(onNavigateBack = { navController.popBackStack() }, onNavigateToAdd = { navController.navigate(Screen.WalletForm.createRoute()) })
+                WalletListScreen(
+                    onNavigateBack       = { navController.popBackStack() },
+                    onNavigateToAdd      = { navController.navigate(Screen.WalletForm.createRoute()) },
+                    onNavigateToTransfer = { navController.navigate(Screen.Transfer.route) }
+                )
             }
             composable(route = Screen.WalletForm.route, arguments = listOf(navArgument("walletId") { type = NavType.StringType; defaultValue = "new" })) {
                 WalletFormScreen(onNavigateBack = { navController.popBackStack() })
+            }
+            composable(Screen.Transfer.route) {
+                TransferScreen(onNavigateBack = { navController.popBackStack() })
             }
             composable(Screen.CategoryList.route)   { com.sndiy.chatfin.feature.finance.category.ui.CategoryScreen(onNavigateBack = { navController.popBackStack() }) }
             composable(Screen.SettingsTheme.route)   { SettingsThemeScreen(onNavigateBack = { navController.popBackStack() }) }
@@ -216,7 +240,7 @@ fun ChatFinNavGraph(
                 showQuickAdd = false
             },
             onDismiss  = { showQuickAdd = false },
-            onFullForm = { navController.navigate(Screen.TransactionForm.route) }
+            onFullForm = { navController.navigate(Screen.TransactionForm.createRoute()) }
         )
     }
 }

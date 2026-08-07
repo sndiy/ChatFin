@@ -386,7 +386,13 @@ fun ReceiptScannerScreen(
                         viewModel.saveReceiptTransaction(
                             merchant, date, time, totalAmount, walletId, categoryId, itemsSummary, itemsList
                         )
-                    }
+                    },
+                    isOnline = uiState.isOnline,
+                    isAiKeyAvailable = uiState.isAiKeyAvailable,
+                    isAiEnhancing = uiState.isAiEnhancing,
+                    aiErrorRes = uiState.aiErrorRes,
+                    onEnhanceWithAi = { viewModel.enhanceWithAi() },
+                    onDismissAiError = { viewModel.dismissAiError() }
                 )
             }
         }

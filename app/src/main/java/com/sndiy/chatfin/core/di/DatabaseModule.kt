@@ -164,6 +164,19 @@ val MIGRATION_7_8 = object : Migration(7, 8) {
     }
 }
 
+// Migration dari v8 ke v9: seed kategori global "Transfer" (id="transfer")
+// untuk transaksi TRANSFER — sebelumnya categoryId="transfer" dipakai sebagai
+// fallback (lihat TransactionViewModel.saveTransaction) tapi bukan row nyata
+// di tabel categories, jadi lookup nama kategori gagal dan fallback ke id mentah.
+val MIGRATION_8_9 = object : Migration(8, 9) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "INSERT OR IGNORE INTO categories (id, accountId, name, type, iconName, colorHex, isCustom, sortOrder) " +
+                "VALUES ('transfer', NULL, 'Transfer', 'TRANSFER', 'swap_horiz', '#616161', 0, 0)"
+        )
+    }
+}
+
 @Module
 @InstallIn(SingletonComponent::class)
 object DatabaseModule {
@@ -203,7 +216,7 @@ object DatabaseModule {
             .addCallback(callback)
             .addMigrations(
                 MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5,
-                MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8
+                MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9
             )
             .build()
             .also { db = it }

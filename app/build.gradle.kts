@@ -19,8 +19,8 @@ android {
         // targetSdk 36 (Android 16) wajib untuk update aplikasi di Play Store —
         // dengan 35, Play menolak upload/update APK apa pun.
         targetSdk       = 36
-        versionCode     = 7
-        versionName     = "2.8.0"
+        versionCode     = 8
+        versionName     = "2.9.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -123,7 +123,7 @@ dependencies {
     implementation(libs.firebase.firestore)
     implementation(libs.firebase.auth)
 
-    implementation(libs.generativeai)
+    implementation(libs.okhttp)
 
     implementation(libs.vico.compose)
 

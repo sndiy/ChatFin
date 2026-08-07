@@ -32,7 +32,8 @@ data class ParsedReceipt(
     val rawText: String = "",
     val isMerchantLowConfidence: Boolean = false,
     val isDateLowConfidence: Boolean = false,
-    val isTotalLowConfidence: Boolean = false
+    val isTotalLowConfidence: Boolean = false,
+    val isAiEnhanced: Boolean = false
 ) {
     /**
      * Menandai apakah struk memiliki setidaknya satu field yang diragukan/tidak terbaca.

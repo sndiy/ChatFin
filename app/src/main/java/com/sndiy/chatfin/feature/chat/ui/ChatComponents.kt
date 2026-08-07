@@ -356,10 +356,14 @@ internal fun AiMessageBubble(
     option: ChatOption?,
     isError: Boolean,
     transactions: List<com.sndiy.chatfin.core.data.local.entity.TransactionEntity> = emptyList(),
+    categories: List<com.sndiy.chatfin.core.data.local.entity.CategoryEntity> = emptyList(),
+    wallets: List<com.sndiy.chatfin.core.data.local.entity.WalletEntity> = emptyList(),
     pendingTransaction: PendingTransaction?,
     onOptionSelected: (String) -> Unit,
     onConfirmTransaction: () -> Unit,
     onCancelTransaction: () -> Unit,
+    onEditTransactionQuick: (com.sndiy.chatfin.core.data.local.entity.TransactionEntity) -> Unit = {},
+    onDeleteTransactionRequest: (com.sndiy.chatfin.core.data.local.entity.TransactionEntity) -> Unit = {},
     onCopyText: (String) -> Unit = {},
     onDeleteMessage: (String) -> Unit = {},
     onReplyMessage: (String, String) -> Unit = { _, _ -> }
@@ -454,6 +458,22 @@ internal fun AiMessageBubble(
                             "AUTO_AI" -> TableTemplate.AUTO_AI
                             else -> TableTemplate.CATEGORY_SUMMARY
                         }
+                    )
+                }
+                is ChatOption.TransactionListResult -> {
+                    TransactionListCard(
+                        periodLabel     = option.periodLabel,
+                        startDate       = option.startDate,
+                        endDate         = option.endDate,
+                        limit           = option.limit,
+                        categoryName    = option.categoryName,
+                        walletName      = option.walletName,
+                        type            = option.type,
+                        transactions    = transactions,
+                        categories      = categories,
+                        wallets         = wallets,
+                        onEditQuick     = onEditTransactionQuick,
+                        onDeleteRequest = onDeleteTransactionRequest
                     )
                 }
                 null -> {}

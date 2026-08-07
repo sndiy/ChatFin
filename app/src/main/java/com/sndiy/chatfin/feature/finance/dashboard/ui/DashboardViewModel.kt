@@ -155,7 +155,7 @@ class DashboardViewModel @Inject constructor(
                         id           = tx.id,
                         type         = tx.type,
                         amount       = tx.amount,
-                        categoryName = catMap[tx.categoryId] ?: tx.categoryId,
+                        categoryName = if (tx.type == "TRANSFER") "Transfer" else catMap[tx.categoryId] ?: tx.categoryId,
                         walletName   = walletMap[tx.walletId] ?: tx.walletId,
                         date         = tx.date,
                         time         = tx.time,

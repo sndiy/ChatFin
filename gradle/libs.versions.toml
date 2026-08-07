@@ -28,8 +28,9 @@ securityCrypto              = "1.1.0-alpha06"
 # Firebase
 firebaseBom                 = "34.10.0"
 
-# Google AI (Gemini)
-generativeai                = "0.9.0"
+# Networking (panggilan REST langsung ke Gemini API — SDK com.google.ai.client.generativeai
+# sudah deprecated Google, lihat GeminiClient.kt untuk konteks migrasi)
+okhttp                       = "5.4.0"
 
 # Charts
 vico                        = "2.1.2"
@@ -101,8 +102,8 @@ firebase-bom                = { group = "com.google.firebase", name = "firebase-
 firebase-firestore          = { group = "com.google.firebase", name = "firebase-firestore" }
 firebase-auth               = { group = "com.google.firebase", name = "firebase-auth" }
 
-# Google AI (Gemini)
-generativeai                = { group = "com.google.ai.client.generativeai", name = "generativeai", version.ref = "generativeai" }
+# Networking
+okhttp                       = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
 
 # Charts (Vico - Compose native)
 vico-compose                = { group = "com.patrykandpatrick.vico", name = "compose-m3", version.ref = "vico" }

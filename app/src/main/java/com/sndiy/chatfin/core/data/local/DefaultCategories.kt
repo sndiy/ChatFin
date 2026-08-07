@@ -32,5 +32,10 @@ object DefaultCategories {
         CategoryEntity(id = "inc_other",       accountId = null, name = "Lainnya",           type = "INCOME",  iconName = "more_horiz",          colorHex = "#757575", isCustom = false, sortOrder = 6),
     )
 
-    val all = expenseCategories + incomeCategories
+    // Kategori khusus transaksi TRANSFER — global, tidak pernah muncul di
+    // category picker EXPENSE/INCOME karena type-nya tidak cocok dengan
+    // getCategoriesByAccountAndType(accountId, "EXPENSE"/"INCOME").
+    val transferCategory = CategoryEntity(id = "transfer", accountId = null, name = "Transfer", type = "TRANSFER", iconName = "swap_horiz", colorHex = "#616161", isCustom = false, sortOrder = 0)
+
+    val all = expenseCategories + incomeCategories + transferCategory
 }

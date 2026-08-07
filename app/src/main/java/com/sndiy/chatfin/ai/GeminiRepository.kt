@@ -32,6 +32,15 @@ class GeminiRepository @Inject constructor(
                     quotaRetryCount = 0
                     Result.failure(e)
                 }
+                (e as? GeminiApiException)?.finishReason != null -> {
+                    quotaRetryCount = 0
+                    val finishReason = (e as GeminiApiException).finishReason!!
+                    // finishReason cuma nama status (MAX_TOKENS/SAFETY/dst), bukan isi respons —
+                    // aman dicetak. Pola sama seperti ReceiptAiEnhancer: jangan lempar pesan
+                    // mentah Google apa adanya ke user, itu bukan sesuatu yang bisa mereka tindak.
+                    android.util.Log.w("GeminiRepo", "Generation berhenti sebelum selesai (finishReason=$finishReason)")
+                    Result.failure(GenerationIncompleteException(finishReason))
+                }
                 client.isQuotaError(e) -> {
                     val failedModel = client.currentModelName
                     quotaRetryCount++

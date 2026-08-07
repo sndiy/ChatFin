@@ -23,10 +23,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.sndiy.chatfin.R
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.sndiy.chatfin.core.data.local.entity.CategoryEntity
@@ -51,10 +53,17 @@ private val formNotePresets = listOf(
 @Composable
 fun TransactionFormScreen(
     onNavigateBack: () -> Unit,
+    transactionId: String? = null,
     viewModel: TransactionViewModel = hiltViewModel()
 ) {
     val formState by viewModel.formState.collectAsStateWithLifecycle()
     val listState by viewModel.listState.collectAsStateWithLifecycle()
+
+    // Dibuka dengan id (mis. tombol "Edit lengkap" dari chat) → muat transaksi
+    // yang bersangkutan begitu layar ini pertama kali tampil.
+    LaunchedEffect(transactionId) {
+        transactionId?.let { viewModel.loadForEditById(it) }
+    }
 
     // Navigasi kembali setelah berhasil simpan
     LaunchedEffect(formState.isSaved) {
@@ -74,7 +83,7 @@ fun TransactionFormScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Tambah Transaksi") },
+                title = { Text(stringResource(if (formState.editingId != null) R.string.transaction_form_title_edit else R.string.transaction_form_title_add)) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, "Kembali")

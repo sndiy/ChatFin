@@ -14,6 +14,7 @@ import com.sndiy.chatfin.core.persona.PersonaVoices
 import com.sndiy.chatfin.core.parser.ParseResult
 import com.sndiy.chatfin.core.parser.ParsedDraft
 import com.sndiy.chatfin.core.parser.TransactionParser
+import com.sndiy.chatfin.core.parser.TransactionQueryParser
 import com.sndiy.chatfin.core.parser.RoomKeywordSource
 import com.sndiy.chatfin.core.utils.NetworkMonitor
 import com.sndiy.chatfin.feature.chat.data.repository.ChatRepository
@@ -30,6 +31,7 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.LocalTime
+import java.time.format.DateTimeFormatter
 import java.util.UUID
 import javax.inject.Inject
 
@@ -53,14 +55,19 @@ data class ChatUiState(
     val isBotMode: Boolean                      = false,
     val connectionStatus: ConnectionStatus      = ConnectionStatus.CONNECTED,
     val retryCountdown: Int                     = 0,
-    val activeModelName: String                 = "gemini-2.5-flash",
+    val activeModelName: String                 = "gemini-3.6-flash",
     val activeAccount: FinanceAccountEntity?    = null,
     val wallets: List<WalletEntity>             = emptyList(),
     val expenseCategories: List<CategoryEntity> = emptyList(),
     val incomeCategories: List<CategoryEntity>  = emptyList(),
     val transactions: List<TransactionEntity>   = emptyList(),
     val pendingTransaction: PendingTransaction? = null,
-    val replyingToMessage: UiMessage?           = null
+    val replyingToMessage: UiMessage?           = null,
+    // State UI transient (bukan bagian percakapan yang perlu di-restore) —
+    // popup konfirmasi hapus & sheet edit cepat untuk transaksi yang SUDAH
+    // tersimpan, dipicu dari kartu daftar transaksi di chat.
+    val deleteConfirmTransaction: TransactionEntity? = null,
+    val quickEditTransaction: TransactionEntity?     = null
 )
 
 data class PendingTransaction(
@@ -111,6 +118,8 @@ class ChatViewModel @Inject constructor(
 
         /** Di bawah ini hampir pasti bukan nominal rupiah — lihat [captureSlotsFromUserMessage]. */
         private const val MIN_CAPTURED_AMOUNT = 1_000L
+
+        private val queryDateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")
     }
 
     private val _uiState = MutableStateFlow(ChatUiState())
@@ -341,7 +350,8 @@ private data class Tuple4<A, B, C, D>(val a: A, val b: B, val c: C, val d: D)
             expenseCategories = state.expenseCategories,
             incomeCategories  = state.incomeCategories,
             totalIncome       = totalIncome,
-            totalExpense      = totalExpense
+            totalExpense      = totalExpense,
+            transactions      = state.transactions
         )
         systemPrompt = buildPrompt()
     }
@@ -536,8 +546,29 @@ private data class Tuple4<A, B, C, D>(val a: A, val b: B, val c: C, val d: D)
         // mencatat lewat perintah setor/tarik.
         val offline = !networkMonitor.isCurrentlyConnected()
         if (offline) switchToOfflineMode()
+        val localOnly = offline || _uiState.value.isBotMode
 
-        if (offline || _uiState.value.isBotMode) {
+        // Query transaksi terstruktur ("tampilkan transaksi bulan ini") dijawab
+        // parser lokal — hasilnya identik online maupun offline, tanpa state
+        // percakapan (ini command sekali-jalan, bukan wizard multi-turn).
+        //
+        // KECUALI kalimatnya menunjuk giliran sebelumnya ("tampilkan khusus
+        // transaksi ITU"): rujukan semacam itu tidak ada di dalam kalimatnya,
+        // jadi pencocokan kata kunci hanya bisa mengabaikannya dan menampilkan
+        // SEMUA transaksi — persis melenceng dari yang diminta. Selama masih
+        // online, AI-lah yang memegang konteksnya; biarkan dia yang menafsirkan
+        // lalu meminta kartunya lewat [CHATFIN_OPTIONS] beserta filternya.
+        val query = TransactionQueryParser.parse(
+            input           = text,
+            knownCategories = state().allCategories.map { it.name },
+            knownWallets    = state().wallets.map { it.name }
+        )
+        if (query != null && (localOnly || !TransactionQueryParser.refersToContext(text))) {
+            handleTransactionQuery(query)
+            return
+        }
+
+        if (localOnly) {
             if (isBotCommand(text)) {
                 handleBotMode(text)
                 return
@@ -803,6 +834,17 @@ private data class Tuple4<A, B, C, D>(val a: A, val b: B, val c: C, val d: D)
 
                     when {
                         error is ApiKeyMissingException -> switchToNoApiKeyBotMode()
+                        error is GenerationIncompleteException -> {
+                            // Bukan kegagalan jaringan/kuota — model berhenti sebelum sempat
+                            // menulis jawaban (paling sering MAX_TOKENS: reasoning internalnya
+                            // menghabiskan jatah token sebelum teks jawaban diproduksi). Pesan
+                            // ramah, bukan "Content generation stopped. Reason: ..." mentah.
+                            addMessage(UiMessage(
+                                role    = "model",
+                                text    = "*mengetuk meja* Kepikiran-nya kepanjangan, jawabannya jadi enggak sempat ditulis. Coba tanya lagi dengan kalimat yang lebih singkat ya.",
+                                isError = true
+                            ))
+                        }
                         isNoInternet -> switchToOfflineMode()
                         isOneLimit && aiRetryCount < 1 -> {
                             aiRetryCount++
@@ -961,6 +1003,24 @@ private data class Tuple4<A, B, C, D>(val a: A, val b: B, val c: C, val d: D)
         }
     }
 
+    // ── Query transaksi (kartu daftar) ────────────────────────────────────────
+    private fun handleTransactionQuery(query: TransactionQueryParser.QueryResult) {
+        val option = ChatOption.TransactionListResult(
+            periodLabel  = query.periodLabel,
+            startDate    = query.startDate.format(queryDateFormatter),
+            endDate      = query.endDate.format(queryDateFormatter),
+            limit        = query.limit,
+            categoryName = query.categoryName,
+            walletName   = query.walletName,
+            type         = query.type
+        )
+        addMessage(UiMessage(
+            role   = "model",
+            text   = "Ini transaksi ${query.periodLabel.lowercase()}:",
+            option = option
+        ))
+    }
+
     // ── Option selected ───────────────────────────────────────────────────────
     fun onOptionSelected(option: ChatOption, selectedValue: String) {
         val answeredIds = _uiState.value.messages.filter { it.option == option }.map { it.id }
@@ -1033,6 +1093,62 @@ private data class Tuple4<A, B, C, D>(val a: A, val b: B, val c: C, val d: D)
         chatHistory.add("user" to "Batal")
         botStep = BotStep.Idle
         resetAiDraft()
+    }
+
+    // ── Hapus transaksi (dari kartu daftar transaksi) ─────────────────────────
+    fun requestDeleteTransaction(transaction: TransactionEntity) {
+        _uiState.update { it.copy(deleteConfirmTransaction = transaction) }
+    }
+
+    fun dismissDeleteConfirm() {
+        _uiState.update { it.copy(deleteConfirmTransaction = null) }
+    }
+
+    fun confirmDeleteTransaction() {
+        val tx = _uiState.value.deleteConfirmTransaction ?: return
+        viewModelScope.launch {
+            try {
+                transactionRepo.deleteTransaction(tx)
+                _uiState.update { it.copy(deleteConfirmTransaction = null) }
+                addMessage(UiMessage(role = "model", text = "Transaksi dihapus. Saldo dompet dikembalikan."))
+            } catch (e: Exception) {
+                _uiState.update { it.copy(deleteConfirmTransaction = null) }
+                addMessage(UiMessage(role = "model", text = "Gagal menghapus: ${e.message}", isError = true))
+            }
+        }
+    }
+
+    // ── Edit cepat transaksi (dari kartu daftar transaksi) ────────────────────
+    fun requestQuickEdit(transaction: TransactionEntity) {
+        _uiState.update { it.copy(quickEditTransaction = transaction) }
+    }
+
+    fun dismissQuickEdit() {
+        _uiState.update { it.copy(quickEditTransaction = null) }
+    }
+
+    fun saveQuickEdit(newType: String, newAmount: Long, newCategoryId: String, newWalletId: String, newDate: LocalDate) {
+        val tx = _uiState.value.quickEditTransaction ?: return
+        viewModelScope.launch {
+            try {
+                transactionRepo.updateTransaction(
+                    oldTransaction = tx,
+                    newType        = newType,
+                    newAmount      = newAmount,
+                    newCategoryId  = newCategoryId,
+                    newWalletId    = newWalletId,
+                    newToWalletId  = tx.toWalletId,
+                    newNote        = tx.note,
+                    newDate        = newDate,
+                    newTime        = runCatching { LocalTime.parse(tx.time) }.getOrElse { LocalTime.now() }
+                )
+                _uiState.update { it.copy(quickEditTransaction = null) }
+                addMessage(UiMessage(role = "model", text = "Transaksi diperbarui."))
+            } catch (e: Exception) {
+                _uiState.update { it.copy(quickEditTransaction = null) }
+                addMessage(UiMessage(role = "model", text = "Gagal memperbarui: ${e.message}", isError = true))
+            }
+        }
     }
 
     private fun clearAllOptions() {
