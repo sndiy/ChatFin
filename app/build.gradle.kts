@@ -19,8 +19,8 @@ android {
         // targetSdk 36 (Android 16) wajib untuk update aplikasi di Play Store —
         // dengan 35, Play menolak upload/update APK apa pun.
         targetSdk       = 36
-        versionCode     = 8
-        versionName     = "2.9.0"
+        versionCode     = 9
+        versionName     = "2.10.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
