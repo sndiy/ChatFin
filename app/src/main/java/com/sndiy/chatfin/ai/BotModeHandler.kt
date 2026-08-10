@@ -4,6 +4,7 @@ import com.sndiy.chatfin.core.data.local.entity.CategoryEntity
 import com.sndiy.chatfin.core.data.local.entity.WalletEntity
 import com.sndiy.chatfin.core.parser.AmountParser
 import com.sndiy.chatfin.core.parser.ParsedDraft
+import com.sndiy.chatfin.core.parser.TransactionQueryParser
 import com.sndiy.chatfin.core.persona.PersonaVoice
 import java.text.NumberFormat
 import java.util.Locale
@@ -112,16 +113,32 @@ class BotModeHandler @Inject constructor() {
             cmd == "rangkuman" || cmd == "summary" -> BotResult("__RANGKUMAN__")
 
             cmd == "chart" || cmd == "grafik" || cmd == "diagram" || cmd.contains("chart") || cmd.contains("grafik") || cmd.contains("visualisasi") -> {
+                // Filter kategori/dompet/tipe diekstrak dari perintah yang sama
+                // (mis. "grafik untuk kategori belanja dan makanan") — dulu
+                // selalu diabaikan, chart offline selalu tampil tanpa filter
+                // apa pun walau usernya sudah menyebutkannya.
+                val allCats = expenseCategories + incomeCategories
                 BotResult(
                     text = "Berikut visualisasi grafik keuanganmu. Kamu bisa memilih tipe chart, rentang tanggal, dan warna tema langsung lewat tombol di bawah:",
-                    option = ChatOption.VisualizationRequest(title = "Grafik Keuangan Pengeluaran")
+                    option = ChatOption.VisualizationRequest(
+                        title = "Grafik Keuangan Pengeluaran",
+                        categoryNames = TransactionQueryParser.matchAllNames(cmd, allCats.map { it.name }),
+                        walletNames = TransactionQueryParser.matchAllNames(cmd, wallets.map { it.name }),
+                        txType = TransactionQueryParser.detectType(cmd)
+                    )
                 )
             }
 
             cmd == "tabel" || cmd == "table" || cmd.contains("tabel") || cmd.contains("table") -> {
+                val allCats = expenseCategories + incomeCategories
                 BotResult(
                     text = "Berikut visualisasi tabel keuanganmu. Pilih template siap pakai atau biarkan AI mendesain formatnya lewat tombol di bawah:",
-                    option = ChatOption.TableRequest(title = "Tabel Ringkasan Keuangan")
+                    option = ChatOption.TableRequest(
+                        title = "Tabel Ringkasan Keuangan",
+                        categoryNames = TransactionQueryParser.matchAllNames(cmd, allCats.map { it.name }),
+                        walletNames = TransactionQueryParser.matchAllNames(cmd, wallets.map { it.name }),
+                        txType = TransactionQueryParser.detectType(cmd)
+                    )
                 )
             }
 

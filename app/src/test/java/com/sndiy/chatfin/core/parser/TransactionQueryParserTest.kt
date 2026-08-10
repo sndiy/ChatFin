@@ -210,6 +210,38 @@ class TransactionQueryParserTest {
 
     // ── Rujukan ke percakapan sebelumnya ─────────────────────────────────────
 
+    // ── Guard grafik/tabel (Bagian 10) ───────────────────────────────────────
+
+    @Test fun `permintaan grafik terdeteksi eksplisit`() {
+        assertTrue(TransactionQueryParser.isExplicitVisualizationRequest(
+            "lihat grafik hanya untuk kategori belanja dan makanan"
+        ))
+        assertTrue(TransactionQueryParser.isExplicitVisualizationRequest("buatkan tabel pengeluaran"))
+        assertTrue(TransactionQueryParser.isExplicitVisualizationRequest("mau lihat diagram"))
+    }
+
+    @Test fun `permintaan transaksi biasa bukan permintaan visualisasi`() {
+        assertFalse(TransactionQueryParser.isExplicitVisualizationRequest("tampilkan transaksi bulan ini"))
+        assertFalse(TransactionQueryParser.isExplicitVisualizationRequest("beritahu transaksi minggu ini"))
+    }
+
+    @Test fun `matchAllNames mengembalikan lebih dari satu nama sekaligus`() {
+        val result = TransactionQueryParser.matchAllNames(
+            "lihat grafik hanya untuk kategori belanja dan makanan",
+            listOf("Makanan & Minuman", "Transportasi", "Belanja")
+        )
+        assertEquals(setOf("Makanan & Minuman", "Belanja"), result.toSet())
+    }
+
+    @Test fun `matchAllNames kosong kalau tidak ada nama yang disebut`() {
+        assertTrue(
+            TransactionQueryParser.matchAllNames(
+                "tampilkan grafik bulan ini",
+                listOf("Makanan & Minuman", "Transportasi")
+            ).isEmpty()
+        )
+    }
+
     @Test fun `kalimat yang menunjuk giliran sebelumnya terdeteksi`() {
         assertTrue(TransactionQueryParser.refersToContext("tampilkan khusus transaksi itu"))
         assertTrue(TransactionQueryParser.refersToContext("yang tadi saja"))

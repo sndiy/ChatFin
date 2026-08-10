@@ -42,7 +42,9 @@ import com.patrykandpatrick.vico.core.cartesian.axis.VerticalAxis
 import com.patrykandpatrick.vico.core.cartesian.data.CartesianChartModelProducer
 import com.patrykandpatrick.vico.core.cartesian.data.columnSeries
 import com.patrykandpatrick.vico.core.cartesian.data.lineSeries
+import com.sndiy.chatfin.core.data.local.entity.CategoryEntity
 import com.sndiy.chatfin.core.data.local.entity.TransactionEntity
+import com.sndiy.chatfin.core.data.local.entity.WalletEntity
 import kotlinx.coroutines.launch
 import java.text.NumberFormat
 import java.time.LocalDate
@@ -96,8 +98,17 @@ data class ChartDataItem(
 fun InteractiveChartCard(
     title: String,
     transactions: List<TransactionEntity>,
+    categories: List<CategoryEntity> = emptyList(),
+    wallets: List<WalletEntity> = emptyList(),
     initialType: ChartType = ChartType.BAR,
     initialPeriod: DateRangePeriod = DateRangePeriod.THIS_MONTH,
+    /** Nama, bukan id — diresolve di sini karena hanya AI/BotModeHandler yang
+     *  tahu nama yang disebut user, bukan id internalnya. */
+    categoryNames: List<String> = emptyList(),
+    walletNames: List<String> = emptyList(),
+    /** EXPENSE | INCOME; null = default EXPENSE (grafik ini secara historis
+     *  berlabel "Pengeluaran" — tanpa default ini income/transfer ikut campur). */
+    txType: String? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -111,8 +122,28 @@ fun InteractiveChartCard(
     var showValues by remember { mutableStateOf(true) }
     var isExporting by remember { mutableStateOf(false) }
 
-    val chartData = remember(transactions, selectedPeriod) {
-        aggregateTransactionsForChart(transactions, selectedPeriod)
+    // Nama tidak ketemu di data akun = tidak difilter (bukan hasil kosong) —
+    // pola yang sama dengan TransactionListCard, supaya salah eja dari AI tidak
+    // membuat grafik diam-diam kosong tanpa penjelasan.
+    val categoryIds = remember(categoryNames, categories) {
+        categoryNames.takeIf { it.isNotEmpty() }
+            ?.let { names -> categories.filter { c -> names.any { n -> n.equals(c.name, true) } }.map { it.id }.toSet() }
+            ?.takeIf { it.isNotEmpty() }
+    }
+    val walletIds = remember(walletNames, wallets) {
+        walletNames.takeIf { it.isNotEmpty() }
+            ?.let { names -> wallets.filter { w -> names.any { n -> n.equals(w.name, true) } }.map { it.id }.toSet() }
+            ?.takeIf { it.isNotEmpty() }
+    }
+    val effectiveType = txType?.takeIf { it == "INCOME" || it == "EXPENSE" } ?: "EXPENSE"
+    val activeFilters = listOfNotNull(
+        categoryIds?.let { categoryNames.joinToString(", ") },
+        walletIds?.let { walletNames.joinToString(", ") },
+        if (effectiveType == "INCOME") "Pemasukan" else "Pengeluaran"
+    )
+
+    val chartData = remember(transactions, categories, selectedPeriod, categoryIds, walletIds, effectiveType) {
+        aggregateTransactionsForChart(transactions, categories, selectedPeriod, categoryIds, walletIds, effectiveType)
     }
 
     val fmt = remember { NumberFormat.getNumberInstance(Locale("id", "ID")) }
@@ -177,6 +208,14 @@ fun InteractiveChartCard(
                         )
                     }
                 }
+            }
+
+            if (activeFilters.isNotEmpty()) {
+                Text(
+                    "Filter: ${activeFilters.joinToString(" · ")}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = selectedTheme.colors.first()
+                )
             }
 
             // Controls 1: Chart Type Buttons
@@ -558,31 +597,44 @@ private fun RenderPieDonutChart(
 
 private fun aggregateTransactionsForChart(
     transactions: List<TransactionEntity>,
-    period: DateRangePeriod
+    categories: List<CategoryEntity>,
+    period: DateRangePeriod,
+    categoryIds: Set<String>?,
+    walletIds: Set<String>?,
+    typeFilter: String
 ): List<ChartDataItem> {
     val now = LocalDate.now()
-    val filtered = transactions.filter { tx ->
-        val date = try { LocalDate.parse(tx.date) } catch (e: Exception) { null }
-        if (date == null) false
-        else when (period) {
-            DateRangePeriod.THIS_MONTH -> date.month == now.month && date.year == now.year
-            DateRangePeriod.LAST_30_DAYS -> !date.isBefore(now.minusDays(30))
-            DateRangePeriod.LAST_3_MONTHS -> !date.isBefore(now.minusMonths(3))
-            DateRangePeriod.THIS_YEAR -> date.year == now.year
+    val filtered = transactions
+        .filter { tx ->
+            val date = try { LocalDate.parse(tx.date) } catch (e: Exception) { null }
+            if (date == null) false
+            else when (period) {
+                DateRangePeriod.THIS_MONTH -> date.month == now.month && date.year == now.year
+                DateRangePeriod.LAST_30_DAYS -> !date.isBefore(now.minusDays(30))
+                DateRangePeriod.LAST_3_MONTHS -> !date.isBefore(now.minusMonths(3))
+                DateRangePeriod.THIS_YEAR -> date.year == now.year
+            }
         }
-    }
+        .filter { it.type == typeFilter }
+        .filter { categoryIds == null || it.categoryId in categoryIds }
+        .filter { walletIds == null || it.walletId in walletIds }
 
     if (filtered.isEmpty()) {
         return emptyList()
     }
 
-    val grouped = filtered.groupBy { tx -> tx.note?.takeIf { it.isNotBlank() } ?: "Pengeluaran" }
-    return grouped.map { (labelName, list) ->
+    // FIX: dulu groupBy { tx.note } — hasilnya mengelompokkan per JUDUL
+    // transaksi, bukan per kategori sungguhan (dua transaksi kategori sama
+    // dengan judul beda jadi dua bar terpisah). "Grafik per kategori" sekarang
+    // benar-benar per categoryId.
+    val grouped = filtered.groupBy { it.categoryId }
+    return grouped.map { (categoryId, list) ->
+        val name = categories.find { it.id == categoryId }?.name ?: "Tanpa kategori"
         val sum = list.sumOf { it.amount }
         ChartDataItem(
-            label = labelName,
+            label = name,
             value = sum,
-            category = labelName
+            category = name
         )
     }.sortedByDescending { it.value }.take(6)
 }

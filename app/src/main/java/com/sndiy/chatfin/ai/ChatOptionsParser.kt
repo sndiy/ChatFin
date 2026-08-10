@@ -32,12 +32,22 @@ sealed class ChatOption {
     data class VisualizationRequest(
         val title: String = "Grafik Keuangan",
         val initialType: String = "BAR",
-        val initialPeriod: String = "THIS_MONTH"
+        val initialPeriod: String = "THIS_MONTH",
+        // List (bukan comma-separated) — konsisten dengan CategoryOptions/WalletOptions
+        // di file ini. Default emptyList() aman untuk baris chat lama (Room) yang
+        // tersimpan sebelum field ini ada, lewat ignoreUnknownKeys.
+        val categoryNames: List<String> = emptyList(),
+        val walletNames: List<String> = emptyList(),
+        /** EXPENSE | INCOME; null = default EXPENSE saat dirender (lihat InteractiveChartCard). */
+        val txType: String? = null
     ) : ChatOption()
     @Serializable
     data class TableRequest(
         val title: String = "Tabel Keuangan",
-        val initialTemplate: String = "CATEGORY_SUMMARY"
+        val initialTemplate: String = "CATEGORY_SUMMARY",
+        val categoryNames: List<String> = emptyList(),
+        val walletNames: List<String> = emptyList(),
+        val txType: String? = null
     ) : ChatOption()
     /** Kartu daftar transaksi periode tertentu. Dibuat dari parser lokal
      *  ([com.sndiy.chatfin.core.parser.TransactionQueryParser]), bukan dari AI —
@@ -145,6 +155,14 @@ class ChatOptionsParser @Inject constructor() {
         return ParsedMessage(text = rawMessage.trim())
     }
 
+    /** Array JSON opsional → List<String>; field tidak ada/bukan array → kosong
+     *  (= tidak difilter), bukan error — permintaan grafik/tabel tanpa filter
+     *  tetap valid. */
+    private fun JSONObject.optJsonStringArray(key: String): List<String> {
+        val arr = optJSONArray(key) ?: return emptyList()
+        return (0 until arr.length()).mapNotNull { arr.optString(it, null) }
+    }
+
     private fun parseOption(json: String): ChatOption? {
         return try {
             val obj  = JSONObject(json)
@@ -172,11 +190,17 @@ class ChatOptionsParser @Inject constructor() {
                 "chart" -> ChatOption.VisualizationRequest(
                     title = obj.optString("title", "Grafik Keuangan"),
                     initialType = obj.optString("chart_type", "BAR").uppercase(),
-                    initialPeriod = obj.optString("period", "THIS_MONTH").uppercase()
+                    initialPeriod = obj.optString("period", "THIS_MONTH").uppercase(),
+                    categoryNames = obj.optJsonStringArray("categories"),
+                    walletNames   = obj.optJsonStringArray("wallets"),
+                    txType        = obj.optString("txType").ifBlank { null }?.uppercase()
                 )
                 "table" -> ChatOption.TableRequest(
                     title = obj.optString("title", "Tabel Keuangan"),
-                    initialTemplate = obj.optString("template", "CATEGORY_SUMMARY").uppercase()
+                    initialTemplate = obj.optString("template", "CATEGORY_SUMMARY").uppercase(),
+                    categoryNames = obj.optJsonStringArray("categories"),
+                    walletNames   = obj.optJsonStringArray("wallets"),
+                    txType        = obj.optString("txType").ifBlank { null }?.uppercase()
                 )
                 // Kartu daftar transaksi yang diminta AI sendiri. Ini jalur untuk
                 // kalimat yang cuma bisa dipahami dari konteks percakapan

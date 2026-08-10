@@ -434,6 +434,8 @@ internal fun AiMessageBubble(
                     InteractiveChartCard(
                         title = option.title,
                         transactions = transactions,
+                        categories = categories,
+                        wallets = wallets,
                         initialType = when (option.initialType) {
                             "LINE" -> ChartType.LINE
                             "PIE" -> ChartType.PIE
@@ -445,19 +447,26 @@ internal fun AiMessageBubble(
                             "LAST_3_MONTHS" -> DateRangePeriod.LAST_3_MONTHS
                             "THIS_YEAR" -> DateRangePeriod.THIS_YEAR
                             else -> DateRangePeriod.THIS_MONTH
-                        }
+                        },
+                        categoryNames = option.categoryNames,
+                        walletNames = option.walletNames,
+                        txType = option.txType
                     )
                 }
                 is ChatOption.TableRequest -> {
                     InteractiveTableCard(
                         title = option.title,
                         transactions = transactions,
+                        categories = categories,
+                        wallets = wallets,
                         initialTemplate = when (option.initialTemplate) {
                             "DAILY_DETAILS" -> TableTemplate.DAILY_DETAILS
                             "MONTHLY_COMPARISON" -> TableTemplate.MONTHLY_COMPARISON
                             "AUTO_AI" -> TableTemplate.AUTO_AI
                             else -> TableTemplate.CATEGORY_SUMMARY
-                        }
+                        },
+                        categoryNames = option.categoryNames,
+                        walletNames = option.walletNames
                     )
                 }
                 is ChatOption.TransactionListResult -> {

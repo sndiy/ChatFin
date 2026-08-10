@@ -87,6 +87,22 @@ object TransactionQueryParser {
     fun refersToContext(input: String): Boolean =
         contextRefPattern.containsMatchIn(input.trim().lowercase())
 
+    // Sama persis daftar yang dijanjikan ke AI di SystemPromptBuilder ("grafik,
+    // chart, diagram, visualisasi, atau tabel") — satu sumber kebenaran supaya
+    // definisi "eksplisit minta viz" tidak mencong antara guard ini dan prompt.
+    private val vizWordPattern = Regex("""\b(grafik|chart|diagram|visualisasi|tabel|table)\b""")
+
+    /**
+     * true kalau kalimatnya EKSPLISIT minta grafik/tabel. Dicek di ChatViewModel
+     * SEBELUM [parse] — tanpa ini, kalimat seperti "lihat grafik untuk kategori
+     * belanja" ikut cocok [parse] (viewVerb "lihat" + txNoun "belanja") dan
+     * dibajak jadi kartu daftar transaksi, padahal kata "grafik" tidak pernah
+     * dicek sama sekali oleh parser ini — AI/BotModeHandler yang sebenarnya
+     * paham permintaan grafik tidak pernah kebagian giliran.
+     */
+    fun isExplicitVisualizationRequest(input: String): Boolean =
+        vizWordPattern.containsMatchIn(input.trim().lowercase())
+
     fun resolve(period: Period, today: LocalDate = LocalDate.now()): QueryResult = when (period) {
         Period.TODAY      -> QueryResult("Hari Ini", today, today)
         Period.YESTERDAY  -> QueryResult("Kemarin", today.minusDays(1), today.minusDays(1))
@@ -178,17 +194,38 @@ object TransactionQueryParser {
         return resolve(period, today).filters()
     }
 
-    /** Nama persis lebih diutamakan; kata pertama dipakai sebagai cadangan
-     *  supaya "makanan" tetap menemukan "Makanan & Minuman". */
-    private fun matchName(lower: String, names: List<String>): String? {
-        names.firstOrNull { lower.contains(it.lowercase()) }?.let { return it }
-        return names.firstOrNull { name ->
+    /** Satu nama saja — dipakai [parse] untuk [QueryResult.categoryName]/[QueryResult.walletName]
+     *  (String tunggal, sudah teruji). Untuk chart/tabel yang mendukung banyak
+     *  filter sekaligus ("belanja dan makanan"), pakai [matchAllNames]. */
+    private fun matchName(lower: String, names: List<String>): String? =
+        matchAllNames(lower, names).firstOrNull()
+
+    /**
+     * Semua nama yang cocok, bukan cuma yang pertama — dipakai ChatOptionsParser
+     * (jalur AI) dan BotModeHandler (jalur offline) untuk mengisi
+     * `categoryNames`/`walletNames` di permintaan grafik/tabel, supaya
+     * "kategori belanja dan makanan" menghasilkan DUA nama, bukan satu.
+     *
+     * Tiap nama dicek SENDIRI-SENDIRI (persis dulu, kata pertama sebagai
+     * cadangan) — BUKAN "kalau ada satu yang cocok persis, matikan cadangan
+     * untuk semua nama lain". Versi awal fungsi ini memang begitu (warisan dari
+     * [matchName] yang cuma butuh SATU hasil terbaik), dan itu bikin
+     * "belanja dan makanan" cuma ketemu "Belanja" — begitu "Belanja" cocok
+     * persis, "Makanan & Minuman" (yang perlu jalur cadangan karena namanya
+     * "Makanan & Minuman", bukan cuma "Makanan") ikut kena matikan.
+     */
+    fun matchAllNames(lower: String, names: List<String>): List<String> = names.filter { name ->
+        lower.contains(name.lowercase()) || run {
             val head = name.lowercase().substringBefore(' ').trim()
             head.length >= 4 && head !in genericNameHeads && lower.contains(head)
         }
     }
 
-    private fun detectType(lower: String): String? = when {
+    /** Non-private supaya BotModeHandler (jalur offline) memakai aturan
+     *  "pengeluaran"/"pemasukan" yang SAMA PERSIS dengan jalur AI — kalau
+     *  didefinisikan ulang di dua tempat, keduanya bisa diam-diam berbeda
+     *  setelah salah satu diedit. */
+    fun detectType(lower: String): String? = when {
         lower.contains("pengeluaran") || lower.contains("pemborosan") -> "EXPENSE"
         lower.contains("pemasukan") || lower.contains("penghasilan")  -> "INCOME"
         else -> null

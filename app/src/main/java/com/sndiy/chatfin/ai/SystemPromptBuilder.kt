@@ -121,10 +121,27 @@ class SystemPromptBuilder @Inject constructor() {
               [CHATFIN_OPTIONS]
               {"type":"chart","title":"Grafik Keuangan","chart_type":"BAR","period":"THIS_MONTH"}
               [/CHATFIN_OPTIONS]
+              Nilai chart_type yang sah: BAR, LINE, PIE, DONUT.
+              Nilai period yang sah: THIS_MONTH, LAST_30_DAYS, LAST_3_MONTHS, THIS_YEAR.
             - Untuk TABEL: Tulis 1 kalimat pengantar, lalu sertakan tag:
               [CHATFIN_OPTIONS]
               {"type":"table","title":"Tabel Ringkasan Keuangan","template":"CATEGORY_SUMMARY"}
               [/CHATFIN_OPTIONS]
+              Nilai template yang sah: CATEGORY_SUMMARY, DAILY_DETAILS, MONTHLY_COMPARISON.
+
+            FIELD FILTER OPSIONAL (untuk chart MAUPUN table) — pakai kalau $userName menyebut
+            kategori/dompet/tipe tertentu, JANGAN tampilkan semua kalau dia minta yang sempit:
+              "categories" : ARRAY nama kategori PERSIS seperti di KONTEKS FINANSIAL, boleh lebih dari satu
+              "wallets"    : ARRAY nama dompet PERSIS seperti di KONTEKS FINANSIAL
+              "txType"     : "EXPENSE" atau "INCOME" (default grafik kalau tidak disebut: EXPENSE)
+
+            CONTOH — "lihat grafik hanya untuk kategori belanja dan makanan":
+            [CHATFIN_OPTIONS]
+            {"type":"chart","title":"Grafik Belanja & Makanan","chart_type":"BAR","period":"THIS_MONTH","categories":["Belanja","Makanan & Minuman"]}
+            [/CHATFIN_OPTIONS]
+
+            ⚠️ Salin nama kategori/dompet PERSIS dari KONTEKS FINANSIAL — salah eja membuat
+            filter diabaikan diam-diam dan grafik/tabel kembali menampilkan semua kategori.
 
             =====================================================================
             BATAS PENGETAHUANMU SOAL TRANSAKSI TERSIMPAN — WAJIB DIPATUHI

@@ -27,7 +27,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.sndiy.chatfin.core.data.local.entity.CategoryEntity
 import com.sndiy.chatfin.core.data.local.entity.TransactionEntity
+import com.sndiy.chatfin.core.data.local.entity.WalletEntity
 import com.sndiy.chatfin.core.ui.theme.ExpenseRed
 import com.sndiy.chatfin.core.ui.theme.IncomeGreen
 import com.sndiy.chatfin.core.ui.theme.MaiPurple
@@ -63,7 +65,11 @@ data class MonthlyComparisonRow(
 fun InteractiveTableCard(
     title: String,
     transactions: List<TransactionEntity>,
+    categories: List<CategoryEntity> = emptyList(),
+    wallets: List<WalletEntity> = emptyList(),
     initialTemplate: TableTemplate = TableTemplate.CATEGORY_SUMMARY,
+    categoryNames: List<String> = emptyList(),
+    walletNames: List<String> = emptyList(),
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -74,6 +80,34 @@ fun InteractiveTableCard(
     var isExporting by remember { mutableStateOf(false) }
 
     val fmt = remember { NumberFormat.getNumberInstance(Locale("id", "ID")) }
+
+    // Nama tidak ketemu di data akun = tidak difilter, sama seperti
+    // TransactionListCard/InteractiveChartCard — salah eja dari AI tidak
+    // membuat tabel diam-diam kosong.
+    val categoryIds = remember(categoryNames, categories) {
+        categoryNames.takeIf { it.isNotEmpty() }
+            ?.let { names -> categories.filter { c -> names.any { n -> n.equals(c.name, true) } }.map { it.id }.toSet() }
+            ?.takeIf { it.isNotEmpty() }
+    }
+    val walletIds = remember(walletNames, wallets) {
+        walletNames.takeIf { it.isNotEmpty() }
+            ?.let { names -> wallets.filter { w -> names.any { n -> n.equals(w.name, true) } }.map { it.id }.toSet() }
+            ?.takeIf { it.isNotEmpty() }
+    }
+    val activeFilters = listOfNotNull(
+        categoryIds?.let { categoryNames.joinToString(", ") },
+        walletIds?.let { walletNames.joinToString(", ") }
+    )
+    // Filter kategori/dompet diterapkan SEKALI di sini, diteruskan ke ketiga
+    // renderer di bawah. txType SENGAJA tidak diterapkan di titik ini —
+    // RenderCategorySummaryTable mempertahankan filter EXPENSE internalnya
+    // sendiri (labelnya "TOTAL PENGELUARAN"), sedangkan DailyDetails/
+    // MonthlyComparison memang dirancang menampilkan kedua tipe berdampingan.
+    val filteredTransactions = remember(transactions, categoryIds, walletIds) {
+        transactions
+            .filter { categoryIds == null || it.categoryId in categoryIds }
+            .filter { walletIds == null || it.walletId in walletIds }
+    }
 
     Card(
         modifier = modifier.fillMaxWidth(),
@@ -138,6 +172,14 @@ fun InteractiveTableCard(
                 }
             }
 
+            if (activeFilters.isNotEmpty()) {
+                Text(
+                    "Filter: ${activeFilters.joinToString(" · ")}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaiPurple
+                )
+            }
+
             // Template Selector Buttons
             Row(
                 modifier = Modifier
@@ -185,7 +227,7 @@ fun InteractiveTableCard(
                     }
                     .padding(8.dp)
             ) {
-                if (transactions.isEmpty()) {
+                if (filteredTransactions.isEmpty()) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -200,10 +242,10 @@ fun InteractiveTableCard(
                     }
                 } else {
                     when (selectedTemplate) {
-                        TableTemplate.CATEGORY_SUMMARY -> RenderCategorySummaryTable(transactions, fmt)
-                        TableTemplate.DAILY_DETAILS -> RenderDailyDetailsTable(transactions, fmt)
-                        TableTemplate.MONTHLY_COMPARISON -> RenderMonthlyComparisonTable(transactions, fmt)
-                        TableTemplate.AUTO_AI -> RenderCategorySummaryTable(transactions, fmt)
+                        TableTemplate.CATEGORY_SUMMARY -> RenderCategorySummaryTable(filteredTransactions, categories, fmt)
+                        TableTemplate.DAILY_DETAILS -> RenderDailyDetailsTable(filteredTransactions, fmt)
+                        TableTemplate.MONTHLY_COMPARISON -> RenderMonthlyComparisonTable(filteredTransactions, fmt)
+                        TableTemplate.AUTO_AI -> RenderCategorySummaryTable(filteredTransactions, categories, fmt)
                     }
                 }
             }
@@ -215,19 +257,25 @@ fun InteractiveTableCard(
 @Composable
 private fun RenderCategorySummaryTable(
     transactions: List<TransactionEntity>,
+    categories: List<CategoryEntity>,
     fmt: NumberFormat
 ) {
     val totalExpense = remember(transactions) {
         transactions.filter { it.type == "EXPENSE" }.sumOf { it.amount }.coerceAtLeast(1L)
     }
 
-    val summaryRows = remember(transactions) {
+    // FIX: dulu groupBy { tx.note } — mengelompokkan per JUDUL transaksi
+    // (variabel dinamai catName tapi isinya bukan kategori), jadi dua transaksi
+    // kategori sama dengan judul beda jadi dua baris terpisah. Sekarang
+    // benar-benar per categoryId.
+    val summaryRows = remember(transactions, categories) {
         transactions.filter { it.type == "EXPENSE" }
-            .groupBy { tx -> tx.note?.takeIf { it.isNotBlank() } ?: "Pengeluaran" }
-            .map { (catName, list) ->
+            .groupBy { it.categoryId }
+            .map { (categoryId, list) ->
+                val name = categories.find { it.id == categoryId }?.name ?: "Tanpa kategori"
                 val sum = list.sumOf { it.amount }
                 CategorySummaryRow(
-                    categoryName = catName,
+                    categoryName = name,
                     count = list.size,
                     totalAmount = sum,
                     percentage = (sum.toFloat() / totalExpense.toFloat()) * 100f

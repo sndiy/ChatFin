@@ -552,17 +552,29 @@ private data class Tuple4<A, B, C, D>(val a: A, val b: B, val c: C, val d: D)
         // parser lokal — hasilnya identik online maupun offline, tanpa state
         // percakapan (ini command sekali-jalan, bukan wizard multi-turn).
         //
-        // KECUALI kalimatnya menunjuk giliran sebelumnya ("tampilkan khusus
+        // KECUALI kalimatnya EKSPLISIT minta grafik/tabel ("lihat grafik untuk
+        // kategori belanja"). Parser ini juga mengenali kata benda umum seperti
+        // "belanja"/"pengeluaran" sebagai txNoun — tanpa guard ini, kalimat
+        // grafik di atas ikut cocok (viewVerb "lihat" + txNoun "belanja") dan
+        // dibajak jadi kartu DAFTAR TRANSAKSI, padahal kata "grafik"-nya sendiri
+        // tidak pernah dicek oleh parser ini sama sekali. AI/BotModeHandler yang
+        // sebenarnya paham permintaan grafik jadi tidak pernah kebagian giliran.
+        //
+        // KECUALI JUGA kalimatnya menunjuk giliran sebelumnya ("tampilkan khusus
         // transaksi ITU"): rujukan semacam itu tidak ada di dalam kalimatnya,
         // jadi pencocokan kata kunci hanya bisa mengabaikannya dan menampilkan
         // SEMUA transaksi — persis melenceng dari yang diminta. Selama masih
         // online, AI-lah yang memegang konteksnya; biarkan dia yang menafsirkan
         // lalu meminta kartunya lewat [CHATFIN_OPTIONS] beserta filternya.
-        val query = TransactionQueryParser.parse(
-            input           = text,
-            knownCategories = state().allCategories.map { it.name },
-            knownWallets    = state().wallets.map { it.name }
-        )
+        val query = if (TransactionQueryParser.isExplicitVisualizationRequest(text)) {
+            null
+        } else {
+            TransactionQueryParser.parse(
+                input           = text,
+                knownCategories = state().allCategories.map { it.name },
+                knownWallets    = state().wallets.map { it.name }
+            )
+        }
         if (query != null && (localOnly || !TransactionQueryParser.refersToContext(text))) {
             handleTransactionQuery(query)
             return
