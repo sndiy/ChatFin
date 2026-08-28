@@ -5,20 +5,12 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
-import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
-
-enum class AutoBackupFrequency(val label: String) {
-    OFF("Mati"),
-    DAILY("Harian"),
-    WEEKLY("Mingguan"),
-    MONTHLY("Bulanan")
-}
 
 private val Context.backupDataStore: DataStore<Preferences> by preferencesDataStore(name = "auto_backup_prefs")
 
@@ -27,28 +19,11 @@ class BackupPreferences @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
     private object Keys {
-        val FREQUENCY = stringPreferencesKey("auto_backup_frequency")
         val LAST_BACKUP_TIME = longPreferencesKey("last_backup_timestamp")
     }
 
-    val autoBackupFrequency: Flow<AutoBackupFrequency> = context.backupDataStore.data
-        .map { prefs ->
-            val name = prefs[Keys.FREQUENCY] ?: AutoBackupFrequency.OFF.name
-            try {
-                AutoBackupFrequency.valueOf(name)
-            } catch (e: Exception) {
-                AutoBackupFrequency.OFF
-            }
-        }
-
     val lastBackupTimestamp: Flow<Long> = context.backupDataStore.data
         .map { prefs -> prefs[Keys.LAST_BACKUP_TIME] ?: 0L }
-
-    suspend fun setAutoBackupFrequency(frequency: AutoBackupFrequency) {
-        context.backupDataStore.edit { prefs ->
-            prefs[Keys.FREQUENCY] = frequency.name
-        }
-    }
 
     suspend fun setLastBackupTimestamp(timestamp: Long) {
         context.backupDataStore.edit { prefs ->

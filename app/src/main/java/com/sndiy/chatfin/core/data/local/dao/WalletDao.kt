@@ -34,10 +34,10 @@ interface WalletDao {
     suspend fun deleteWallet(wallet: WalletEntity)
 
     // Tambah saldo (dipakai saat ada pemasukan atau transfer masuk)
-    @Query("UPDATE wallets SET balance = balance + :amount WHERE id = :walletId")
-    suspend fun addToBalance(walletId: String, amount: Long)
+    @Query("UPDATE wallets SET balance = balance + :amount, updatedAt = :now WHERE id = :walletId")
+    suspend fun addToBalance(walletId: String, amount: Long, now: Long = System.currentTimeMillis())
 
     // Kurangi saldo (dipakai saat ada pengeluaran atau transfer keluar)
-    @Query("UPDATE wallets SET balance = balance - :amount WHERE id = :walletId")
-    suspend fun subtractFromBalance(walletId: String, amount: Long)
+    @Query("UPDATE wallets SET balance = balance - :amount, updatedAt = :now WHERE id = :walletId")
+    suspend fun subtractFromBalance(walletId: String, amount: Long, now: Long = System.currentTimeMillis())
 }

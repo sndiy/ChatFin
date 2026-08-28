@@ -16,5 +16,6 @@ data class CategoryEntity(
     val iconName: String = "category",
     val colorHex: String = "#0061A4",
     val isCustom: Boolean = false,      // false = kategori default bawaan app
-    val sortOrder: Int = 0
+    val sortOrder: Int = 0,
+    val updatedAt: Long = 0L             // untuk conflict resolution saat sync
 )

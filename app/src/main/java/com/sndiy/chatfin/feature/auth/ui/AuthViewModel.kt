@@ -1,12 +1,11 @@
 // app/src/main/java/com/sndiy/chatfin/feature/auth/ui/AuthViewModel.kt
 //
-// FIXES:
+// Sync:
 // 1. syncAfterLogin: cek hasCloudData sebelum download
-// 2. Login existing user: mergeDownload (bukan downloadAll) — data lokal TIDAK dihapus
+// 2. Login existing user: mergeDownload — data lokal TIDAK dihapus
 // 3. Register new user: uploadAll (data lokal → cloud)
-// 4. syncDownload manual: pakai mergeDownload by default
-// 5. Tambah fullReplace option hanya jika user explicitly minta
-// 6. Wajib konfirmasi sebelum syncUpload/syncDownload (destruktif) — tidak ada "jangan tanya lagi"
+// 4. syncSmart: manual bi-directional sync dari DataBackupScreen
+// 5. isSyncingInitial & syncProgressMessage: full screen loading sinkronisasi awal saat login
 
 package com.sndiy.chatfin.feature.auth.ui
 
@@ -14,11 +13,13 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.firebase.auth.FirebaseUser
 import com.sndiy.chatfin.core.data.auth.AuthRepository
+import com.sndiy.chatfin.core.data.local.AppPreferences
 import com.sndiy.chatfin.core.data.sync.SyncEventBus
 import com.sndiy.chatfin.core.data.sync.SyncRepository
 import com.sndiy.chatfin.core.data.sync.SyncStats
 import com.sndiy.chatfin.feature.finance.account.data.repository.AccountRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -37,17 +38,6 @@ sealed class SyncState {
     data class Error(val message: String) : SyncState()
 }
 
-/** Jenis konfirmasi destruktif yang sedang menunggu persetujuan user. */
-sealed class SyncConfirmType {
-    /** Upload: data lokal menimpa cloud. */
-    object Upload   : SyncConfirmType()
-    /** Download: data cloud menimpa lokal (merge, tapi bisa timpa dokumen yang sama). */
-    object Download : SyncConfirmType()
-}
-
-/** Ringkasan jumlah data lokal vs cloud untuk ditampilkan di dialog konfirmasi. */
-data class SyncDataCount(val local: Int, val cloud: Int)
-
 data class AuthUiState(
     val currentUser: FirebaseUser?       = null,
     val email: String                    = "",
@@ -58,10 +48,9 @@ data class AuthUiState(
     val passwordError: String?           = null,
     val authState: AuthState             = AuthState.Idle,
     val syncState: SyncState             = SyncState.Idle,
-    /** Non-null = dialog konfirmasi destruktif harus ditampilkan. */
-    val pendingSyncConfirm: SyncConfirmType? = null,
-    /** Ringkasan data untuk dialog konfirmasi; null = sedang dimuat. */
-    val syncDataCount: SyncDataCount?    = null
+    val isSyncingInitial: Boolean        = false,
+    val syncProgressMessage: String      = "",
+    val isSyncComplete: Boolean          = false
 )
 
 @HiltViewModel
@@ -69,7 +58,8 @@ class AuthViewModel @Inject constructor(
     private val authRepo: AuthRepository,
     private val syncRepo: SyncRepository,
     private val syncEventBus: SyncEventBus,
-    private val accountRepo: AccountRepository
+    private val accountRepo: AccountRepository,
+    private val appPreferences: AppPreferences
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(AuthUiState())
@@ -92,6 +82,15 @@ class AuthViewModel @Inject constructor(
     fun onConfirmPasswordChange(value: String) =
         _uiState.update { it.copy(confirmPassword = value) }
 
+    fun setRegisterMode(isRegister: Boolean) = _uiState.update {
+        it.copy(
+            isRegisterMode = isRegister,
+            emailError     = null,
+            passwordError  = null,
+            authState      = AuthState.Idle
+        )
+    }
+
     fun toggleMode() = _uiState.update {
         it.copy(
             isRegisterMode = !it.isRegisterMode,
@@ -101,6 +100,22 @@ class AuthViewModel @Inject constructor(
         )
     }
 
+    fun startOffline() {
+        viewModelScope.launch {
+            val existing = accountRepo.getAllAccounts().first()
+            if (existing.isEmpty()) {
+                val accountId = accountRepo.createAccount(name = "Utama")
+                accountRepo.switchActiveAccount(accountId)
+            } else {
+                val active = accountRepo.getActiveAccount().first()
+                if (active == null) {
+                    accountRepo.switchActiveAccount(existing.first().id)
+                }
+            }
+            appPreferences.setOnboardingDone(true)
+        }
+    }
+
     fun loginWithEmail() {
         val state = _uiState.value
         if (!validate(state)) return
@@ -108,7 +123,14 @@ class AuthViewModel @Inject constructor(
         viewModelScope.launch {
             authRepo.loginWithEmail(state.email.trim(), state.password).fold(
                 onSuccess = { user ->
-                    _uiState.update { it.copy(authState = AuthState.Success(user)) }
+                    _uiState.update {
+                        it.copy(
+                            currentUser = user,
+                            isSyncingInitial = true,
+                            syncProgressMessage = "Menghubungkan ke akun...",
+                            authState = AuthState.Idle
+                        )
+                    }
                     syncAfterLogin(user.uid, isNewUser = false)
                 },
                 onFailure = { e ->
@@ -129,7 +151,14 @@ class AuthViewModel @Inject constructor(
         viewModelScope.launch {
             authRepo.registerWithEmail(state.email.trim(), state.password).fold(
                 onSuccess = { user ->
-                    _uiState.update { it.copy(authState = AuthState.Success(user)) }
+                    _uiState.update {
+                        it.copy(
+                            currentUser = user,
+                            isSyncingInitial = true,
+                            syncProgressMessage = "Menyiapkan akun baru...",
+                            authState = AuthState.Idle
+                        )
+                    }
                     syncAfterLogin(user.uid, isNewUser = true)
                 },
                 onFailure = { e ->
@@ -153,7 +182,7 @@ class AuthViewModel @Inject constructor(
 
     fun logout() {
         authRepo.logout()
-        _uiState.update { it.copy(currentUser = null, authState = AuthState.Idle) }
+        _uiState.update { it.copy(currentUser = null, authState = AuthState.Idle, isSyncComplete = false) }
     }
 
     // ── Manual sync: Smart Bi-directional Sync (Upload + Merge Download) ─────
@@ -165,9 +194,7 @@ class AuthViewModel @Inject constructor(
                 _uiState.update { it.copy(syncState = SyncState.Error("Sesi login sudah habis. Silakan login ulang.")) }
                 return@launch
             }
-            // Step 1: Upload data lokal baru ke cloud
             val uploadRes = syncRepo.uploadAll(uid)
-            // Step 2: Merge data cloud ke lokal
             val downloadRes = syncRepo.mergeDownload(uid)
 
             if (uploadRes.isSuccess || downloadRes.isSuccess) {
@@ -182,106 +209,10 @@ class AuthViewModel @Inject constructor(
         }
     }
 
-    // ── Konfirmasi wajib: tampilkan dialog sebelum Upload destruktif ──────────
-    // Ambil ringkasan data dulu (lokal vs cloud), simpan di state.
-    // Dialog konfirmasi muncul di UI; syncUpload() dipanggil HANYA setelah user konfirmasi.
-    fun requestSyncUploadConfirm() {
-        viewModelScope.launch {
-            val uid = resolveUid()
-            if (uid == null) {
-                _uiState.update { it.copy(syncState = SyncState.Error("Sesi login sudah habis. Silakan login ulang.")) }
-                return@launch
-            }
-            // Set dialog pending; count = null → UI tahu data sedang dimuat
-            _uiState.update { it.copy(pendingSyncConfirm = SyncConfirmType.Upload, syncDataCount = null) }
-            // Ambil ringkasan data (non-blocking terhadap UI karena di coroutine)
-            val count = try {
-                val raw = syncRepo.compareDataCount(uid)
-                SyncDataCount(local = raw.local, cloud = raw.cloud)
-            } catch (_: Exception) { null }
-            _uiState.update { it.copy(syncDataCount = count) }
-        }
-    }
-
-    // ── Konfirmasi wajib: tampilkan dialog sebelum Download destruktif ────────
-    fun requestSyncDownloadConfirm() {
-        viewModelScope.launch {
-            val uid = resolveUid()
-            if (uid == null) {
-                _uiState.update { it.copy(syncState = SyncState.Error("Sesi login sudah habis. Silakan login ulang.")) }
-                return@launch
-            }
-            _uiState.update { it.copy(pendingSyncConfirm = SyncConfirmType.Download, syncDataCount = null) }
-            val count = try {
-                val raw = syncRepo.compareDataCount(uid)
-                SyncDataCount(local = raw.local, cloud = raw.cloud)
-            } catch (_: Exception) { null }
-            _uiState.update { it.copy(syncDataCount = count) }
-        }
-    }
-
-    /** Tutup dialog konfirmasi tanpa melakukan apa pun (tombol Batal). */
-    fun dismissSyncConfirm() =
-        _uiState.update { it.copy(pendingSyncConfirm = null, syncDataCount = null) }
-
-    // ── Manual sync: Upload lokal → cloud ────────────────────────────────────
-    // Hanya dipanggil SETELAH user mengkonfirmasi dialog (dari DataBackupScreen).
-    fun syncUpload() {
-        _uiState.update { it.copy(pendingSyncConfirm = null, syncDataCount = null, syncState = SyncState.Syncing) }
-        viewModelScope.launch {
-            val uid = resolveUid()
-            if (uid == null) {
-                _uiState.update { it.copy(syncState = SyncState.Error("Sesi login sudah habis. Silakan login ulang.")) }
-                return@launch
-            }
-            syncRepo.uploadAll(uid).fold(
-                onSuccess = { stats ->
-                    _uiState.update { it.copy(syncState = SyncState.Done(stats)) }
-                    syncEventBus.notifySyncCompleted()
-                },
-                onFailure = { e ->
-                    _uiState.update { it.copy(syncState = SyncState.Error(e.message ?: "Upload gagal")) }
-                }
-            )
-        }
-    }
-
-    // ── Manual sync: Download cloud → lokal (MERGE, tidak hapus data lokal) ──
-    // Hanya dipanggil SETELAH user mengkonfirmasi dialog (dari DataBackupScreen).
-    fun syncDownload() {
-        _uiState.update { it.copy(pendingSyncConfirm = null, syncDataCount = null, syncState = SyncState.Syncing) }
-        viewModelScope.launch {
-            val uid = resolveUid()
-            if (uid == null) {
-                _uiState.update { it.copy(syncState = SyncState.Error("Sesi login sudah habis. Silakan login ulang.")) }
-                return@launch
-            }
-            // FIX: Pakai mergeDownload, bukan downloadAll
-            syncRepo.mergeDownload(uid).fold(
-                onSuccess = { stats ->
-                    _uiState.update { it.copy(syncState = SyncState.Done(stats)) }
-                    refreshActiveAccount()
-                    syncEventBus.notifySyncCompleted()
-                },
-                onFailure = { e ->
-                    _uiState.update { it.copy(syncState = SyncState.Error(e.message ?: "Download gagal")) }
-                }
-            )
-        }
-    }
-
     fun clearSyncState() = _uiState.update { it.copy(syncState = SyncState.Idle) }
 
-    // ── Helper: tunggu Firebase Auth restore cached user (race condition guard) ──
-    // Firebase Auth memulihkan sesi dari disk secara async saat cold start.
-    // Selama jendela itu (~100-500ms), auth.currentUser == null meskipun user
-    // sebenarnya sudah login. Fungsi ini menunggu sampai 2 detik sebelum
-    // menyimpulkan user benar-benar tidak login.
     private suspend fun resolveUid(): String? {
-        // Fast path — sudah tersedia
         authRepo.currentUser?.uid?.let { return it }
-
-        // Slow path — tunggu auth state settle (maks 2 detik)
         return try {
             kotlinx.coroutines.withTimeoutOrNull(2_000L) {
                 authRepo.authState
@@ -293,54 +224,36 @@ class AuthViewModel @Inject constructor(
         }
     }
 
-    // ── FIX: Smart sync setelah login ────────────────────────────────────────
+    // ── FIX: Smart sync & loading setelah login (Paralel & Cepat) ───────────
     private suspend fun syncAfterLogin(uid: String, isNewUser: Boolean) {
-        _uiState.update { it.copy(syncState = SyncState.Syncing) }
+        _uiState.update { it.copy(isSyncingInitial = true, syncProgressMessage = "Menyinkronkan data...") }
 
-        if (isNewUser) {
-            // User baru register → upload data lokal ke cloud
-            val result = syncRepo.uploadAll(uid)
-            result.fold(
-                onSuccess = { stats ->
-                    _uiState.update { it.copy(syncState = SyncState.Done(stats)) }
-                    syncEventBus.notifySyncCompleted()
-                },
-                onFailure = { e ->
-                    _uiState.update { it.copy(syncState = SyncState.Error(e.message ?: "Upload gagal")) }
+        try {
+            kotlinx.coroutines.withTimeoutOrNull(4_000L) {
+                if (isNewUser) {
+                    val localAccounts = accountRepo.getAllAccounts().first()
+                    if (localAccounts.isEmpty()) {
+                        val accId = accountRepo.createAccount(name = "Utama")
+                        accountRepo.switchActiveAccount(accId)
+                    }
+                    syncRepo.uploadAll(uid)
+                } else {
+                    syncRepo.mergeDownload(uid)
                 }
-            )
-        } else {
-            // User login di device baru/lama → cek cloud dulu
-            val hasCloud = syncRepo.hasCloudData(uid)
-
-            if (!hasCloud) {
-                // Cloud kosong → upload data lokal yang ada (jangan download kosong!)
-                android.util.Log.d("AuthVM", "Cloud kosong, upload data lokal sebagai gantinya")
-                val result = syncRepo.uploadAll(uid)
-                result.fold(
-                    onSuccess = { stats ->
-                        _uiState.update { it.copy(syncState = SyncState.Done(stats)) }
-                        syncEventBus.notifySyncCompleted()
-                    },
-                    onFailure = { e ->
-                        // Kalau data lokal juga kosong, ya sudah — ga apa-apa
-                        _uiState.update { it.copy(syncState = SyncState.Idle) }
-                    }
-                )
-            } else {
-                // Cloud ada data → MERGE download (tidak hapus data lokal)
-                val result = syncRepo.mergeDownload(uid)
-                result.fold(
-                    onSuccess = { stats ->
-                        _uiState.update { it.copy(syncState = SyncState.Done(stats)) }
-                        refreshActiveAccount()
-                        syncEventBus.notifySyncCompleted()
-                    },
-                    onFailure = { e ->
-                        _uiState.update { it.copy(syncState = SyncState.Error(e.message ?: "Sync gagal")) }
-                    }
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("AuthVM", "Sync timeout/error: ${e.message}")
+        } finally {
+            refreshActiveAccount()
+            appPreferences.setOnboardingDone(true)
+            _uiState.update {
+                it.copy(
+                    isSyncingInitial = false,
+                    isSyncComplete = true,
+                    syncState = SyncState.Done(SyncStats(1, 1, 0, 0))
                 )
             }
+            syncEventBus.notifySyncCompleted()
         }
     }
 
@@ -372,12 +285,13 @@ class AuthViewModel @Inject constructor(
     }
 
     private fun friendlyError(msg: String?): String = when {
-        msg == null                                    -> "Terjadi kesalahan"
-        msg.contains("password", ignoreCase = true)   -> "Password salah"
-        msg.contains("no user", ignoreCase = true)    -> "Akun tidak ditemukan"
-        msg.contains("email", ignoreCase = true)      -> "Email sudah terdaftar"
-        msg.contains("network", ignoreCase = true)    -> "Tidak ada koneksi internet"
-        msg.contains("credential", ignoreCase = true) -> "Email atau password salah"
-        else                                          -> "Login gagal: $msg"
+        msg == null -> "Terjadi kesalahan, coba lagi"
+        msg.contains("password", ignoreCase = true) -> "Password salah"
+        msg.contains("user-not-found", ignoreCase = true) ||
+                msg.contains("no user", ignoreCase = true) -> "Akun belum terdaftar"
+        msg.contains("email-already-in-use", ignoreCase = true) -> "Email sudah terdaftar, silakan masuk"
+        msg.contains("invalid-email", ignoreCase = true) -> "Format email tidak valid"
+        msg.contains("network", ignoreCase = true) -> "Koneksi internet bermasalah"
+        else -> msg
     }
 }

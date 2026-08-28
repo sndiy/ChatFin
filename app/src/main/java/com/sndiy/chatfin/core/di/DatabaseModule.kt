@@ -177,6 +177,158 @@ val MIGRATION_8_9 = object : Migration(8, 9) {
     }
 }
 
+// Bridge migrations v9→v12: versi 10, 11, 12 pernah ada di build lama
+// (indeks transaksi, tabel daily_aggregates) tapi sudah revert dari source.
+// Device yang pernah menjalankan build tersebut sudah di v12.
+// No-op bridges memastikan rantai migrasi 9→10→11→12 lengkap.
+val MIGRATION_9_10 = object : Migration(9, 10) {
+    override fun migrate(db: SupportSQLiteDatabase) { /* no-op bridge */ }
+}
+val MIGRATION_10_11 = object : Migration(10, 11) {
+    override fun migrate(db: SupportSQLiteDatabase) { /* no-op bridge */ }
+}
+val MIGRATION_11_12 = object : Migration(11, 12) {
+    override fun migrate(db: SupportSQLiteDatabase) { /* no-op bridge */ }
+}
+
+// Migration dari v12 ke v13: tambah kolom updatedAt ke 4 tabel utama
+// untuk conflict resolution saat sinkronisasi Firestore antar device.
+// Data lama di-backfill: transactions/wallets/finance_accounts pakai createdAt,
+// categories pakai 0 (tidak punya createdAt).
+val MIGRATION_12_13 = object : Migration(12, 13) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // transactions: tambah updatedAt, backfill dari createdAt
+        db.execSQL("ALTER TABLE transactions ADD COLUMN updatedAt INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("UPDATE transactions SET updatedAt = createdAt")
+
+        // wallets: tambah updatedAt, backfill dari createdAt
+        db.execSQL("ALTER TABLE wallets ADD COLUMN updatedAt INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("UPDATE wallets SET updatedAt = createdAt")
+
+        // finance_accounts: tambah updatedAt, backfill dari createdAt
+        db.execSQL("ALTER TABLE finance_accounts ADD COLUMN updatedAt INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("UPDATE finance_accounts SET updatedAt = createdAt")
+
+        // categories: tambah updatedAt, default 0 (tidak punya createdAt)
+        db.execSQL("ALTER TABLE categories ADD COLUMN updatedAt INTEGER NOT NULL DEFAULT 0")
+    }
+}
+
+// Migration dari v13 ke v14: tambah kolom isInitialBalance + backfill transaksi saldo awal.
+// Untuk setiap wallet: selisih = saldo_tersimpan - SUM(transaksi). Buat 1 transaksi
+// isInitialBalance=true sebesar selisih. Verifikasi: SUM setelah insert == saldo tersimpan.
+val MIGRATION_13_14 = object : Migration(13, 14) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // Step 1: tambah kolom
+        db.execSQL("ALTER TABLE transactions ADD COLUMN isInitialBalance INTEGER NOT NULL DEFAULT 0")
+
+        // Step 2: baca semua wallet
+        val wallets = mutableListOf<WalletMigrationData>()
+        db.query("SELECT id, accountId, balance, createdAt FROM wallets").use { cursor ->
+            while (cursor.moveToNext()) {
+                wallets.add(
+                    WalletMigrationData(
+                        id        = cursor.getString(0),
+                        accountId = cursor.getString(1),
+                        balance   = cursor.getLong(2),
+                        createdAt = cursor.getLong(3)
+                    )
+                )
+            }
+        }
+
+        // Step 3: untuk setiap wallet, hitung selisih dan buat initial balance tx
+        wallets.forEach { wallet ->
+            // Idempotency: cek apakah sudah ada initial balance tx untuk wallet ini
+            val existingCount = db.query(
+                "SELECT COUNT(*) FROM transactions WHERE isInitialBalance = 1 AND walletId = ?",
+                arrayOf(wallet.id)
+            ).use { c -> c.moveToFirst(); c.getLong(0) }
+
+            if (existingCount > 0L) return@forEach // sudah ada, skip
+
+            // Hitung SUM transaksi yang sudah ada untuk wallet ini
+            val computedSum = db.query(
+                """
+                SELECT
+                    COALESCE(SUM(CASE WHEN type='INCOME'   AND walletId=? THEN amount ELSE 0 END), 0)
+                  - COALESCE(SUM(CASE WHEN type='EXPENSE'  AND walletId=? THEN amount ELSE 0 END), 0)
+                  - COALESCE(SUM(CASE WHEN type='TRANSFER' AND walletId=? THEN amount ELSE 0 END), 0)
+                  + COALESCE(SUM(CASE WHEN type='TRANSFER' AND toWalletId=? THEN amount ELSE 0 END), 0)
+                FROM transactions
+                """.trimIndent(),
+                arrayOf(wallet.id, wallet.id, wallet.id, wallet.id)
+            ).use { c -> c.moveToFirst(); c.getLong(0) }
+
+            val selisih = wallet.balance - computedSum
+            val txType = if (selisih >= 0) "INCOME" else "EXPENSE"
+            val txAmount = kotlin.math.abs(selisih)
+            val txCategoryId = if (selisih >= 0) "inc_other" else "exp_other"
+
+            // Konversi createdAt (millis) ke date string
+            val dateStr = db.query(
+                "SELECT strftime('%Y-%m-%d', ? / 1000, 'unixepoch', 'localtime')",
+                arrayOf(wallet.createdAt.toString())
+            ).use { c -> c.moveToFirst(); c.getString(0) ?: "2024-01-01" }
+
+            // INSERT transaksi saldo awal
+            db.execSQL(
+                """
+                INSERT INTO transactions
+                    (id, accountId, type, amount, categoryId, walletId, toWalletId,
+                     note, receiptImageUri, date, time, transferPairId,
+                     isInitialBalance, createdAt, updatedAt)
+                VALUES (?, ?, ?, ?, ?, ?, NULL,
+                        'Saldo awal', NULL, ?, '00:00', NULL,
+                        1, ?, ?)
+                """.trimIndent(),
+                arrayOf(
+                    "init_bal_${wallet.id}",  // id deterministik
+                    wallet.accountId,
+                    txType,
+                    txAmount,
+                    txCategoryId,
+                    wallet.id,
+                    dateStr,
+                    wallet.createdAt,
+                    wallet.createdAt
+                )
+            )
+        }
+
+        // Step 4: VERIFIKASI — SUM(semua transaksi termasuk init bal) harus == saldo tersimpan
+        wallets.forEach { wallet ->
+            val finalSum = db.query(
+                """
+                SELECT
+                    COALESCE(SUM(CASE WHEN type='INCOME'   AND walletId=? THEN amount ELSE 0 END), 0)
+                  - COALESCE(SUM(CASE WHEN type='EXPENSE'  AND walletId=? THEN amount ELSE 0 END), 0)
+                  - COALESCE(SUM(CASE WHEN type='TRANSFER' AND walletId=? THEN amount ELSE 0 END), 0)
+                  + COALESCE(SUM(CASE WHEN type='TRANSFER' AND toWalletId=? THEN amount ELSE 0 END), 0)
+                FROM transactions
+                """.trimIndent(),
+                arrayOf(wallet.id, wallet.id, wallet.id, wallet.id)
+            ).use { c -> c.moveToFirst(); c.getLong(0) }
+
+            if (finalSum != wallet.balance) {
+                throw IllegalStateException(
+                    "MIGRATION_13_14 GAGAL: wallet '${wallet.id}' " +
+                    "saldo tersimpan=${wallet.balance} tapi SUM(tx)=$finalSum. " +
+                    "Data TIDAK dicommit — rollback otomatis."
+                )
+            }
+        }
+    }
+}
+
+// Data class sementara untuk migration
+private data class WalletMigrationData(
+    val id: String,
+    val accountId: String,
+    val balance: Long,
+    val createdAt: Long
+)
+
 @Module
 @InstallIn(SingletonComponent::class)
 object DatabaseModule {
@@ -216,7 +368,9 @@ object DatabaseModule {
             .addCallback(callback)
             .addMigrations(
                 MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5,
-                MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9
+                MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9,
+                MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13,
+                MIGRATION_13_14
             )
             .build()
             .also { db = it }

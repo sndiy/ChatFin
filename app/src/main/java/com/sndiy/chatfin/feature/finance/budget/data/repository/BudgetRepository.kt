@@ -1,12 +1,10 @@
-// app/src/main/java/com/sndiy/chatfin/feature/finance/budget/data/repository/BudgetRepository.kt
-
 package com.sndiy.chatfin.feature.finance.budget.data.repository
 
 import com.sndiy.chatfin.core.data.local.dao.BudgetDao
 import com.sndiy.chatfin.core.data.local.dao.TransactionDao
 import com.sndiy.chatfin.core.data.local.entity.BudgetEntity
+import com.sndiy.chatfin.core.data.sync.FirestoreOutboundSync
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -29,7 +27,8 @@ data class BudgetWithSpent(
 @Singleton
 class BudgetRepository @Inject constructor(
     private val budgetDao: BudgetDao,
-    private val transactionDao: TransactionDao
+    private val transactionDao: TransactionDao,
+    private val outboundSync: FirestoreOutboundSync
 ) {
     private val dateFmt = DateTimeFormatter.ofPattern("yyyy-MM-dd")
 
@@ -73,25 +72,31 @@ class BudgetRepository @Inject constructor(
         val existing = budgetDao.getBudgetByCategoryAndPeriod(accountId, categoryId, year, month)
         if (existing != null) {
             // Update yang ada
-            budgetDao.updateBudget(existing.copy(limitAmount = limitAmount))
+            val updated = existing.copy(limitAmount = limitAmount)
+            budgetDao.updateBudget(updated)
+            outboundSync.pushBudget(updated)
         } else {
-            budgetDao.insertBudget(
-                BudgetEntity(
-                    id          = UUID.randomUUID().toString(),
-                    accountId   = accountId,
-                    categoryId  = categoryId,
-                    limitAmount = limitAmount,
-                    period      = "MONTHLY",
-                    month       = month,
-                    year        = year
-                )
+            val newBudget = BudgetEntity(
+                id          = UUID.randomUUID().toString(),
+                accountId   = accountId,
+                categoryId  = categoryId,
+                limitAmount = limitAmount,
+                period      = "MONTHLY",
+                month       = month,
+                year        = year
             )
+            budgetDao.insertBudget(newBudget)
+            outboundSync.pushBudget(newBudget)
         }
     }
 
-    suspend fun updateBudget(budget: BudgetEntity) =
+    suspend fun updateBudget(budget: BudgetEntity) {
         budgetDao.updateBudget(budget)
+        outboundSync.pushBudget(budget)
+    }
 
-    suspend fun deleteBudget(budget: BudgetEntity) =
+    suspend fun deleteBudget(budget: BudgetEntity) {
         budgetDao.deleteBudget(budget)
+        outboundSync.deleteBudget(budget.id)
+    }
 }

@@ -9,6 +9,10 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface BudgetDao {
 
+    // Ambil semua budget dalam satu akun
+    @Query("SELECT * FROM budgets WHERE accountId = :accountId")
+    fun getBudgetsByAccount(accountId: String): Flow<List<BudgetEntity>>
+
     // Ambil semua budget dalam satu akun untuk bulan dan tahun tertentu
     @Query("""
         SELECT * FROM budgets 

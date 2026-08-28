@@ -56,6 +56,7 @@ import com.sndiy.chatfin.feature.finance.analytics.ui.AnalyticsPeriod
 import com.sndiy.chatfin.feature.finance.analytics.ui.CategorySlice
 import com.sndiy.chatfin.feature.finance.analytics.ui.DailyExpensePoint
 import com.sndiy.chatfin.feature.finance.analytics.ui.MonthlyBarEntry
+import com.sndiy.chatfin.core.data.sync.SyncStatus
 import java.text.NumberFormat
 import java.util.Locale
 import kotlin.math.roundToLong
@@ -73,27 +74,14 @@ fun DashboardScreen(
     onNavigateToReceiptScan: () -> Unit = {},
     viewModel: DashboardViewModel = hiltViewModel()
 ) {
-    val uiState        by viewModel.uiState.collectAsStateWithLifecycle()
-    var showOnboarding by remember { mutableStateOf(false) }
-
-    LaunchedEffect(uiState.isLoading, uiState.isOnboarded) {
-        if (!uiState.isLoading && !uiState.isOnboarded) showOnboarding = true
-    }
-
-    if (showOnboarding) {
-        OnboardingDialog(
-            onConfirm = { name ->
-                viewModel.setupInitialData(name)
-                showOnboarding = false
-            }
-        )
-    }
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("Beranda", fontWeight = FontWeight.Bold) },
                 actions = {
+                    SyncStatusBadge(uiState.syncStatus)
                     IconButton(onClick = onNavigateToReceiptScan) {
                         Icon(Icons.Default.CameraAlt, contentDescription = "Scan Struk", tint = MaterialTheme.colorScheme.primary)
                     }
@@ -676,32 +664,7 @@ private fun TransactionItem(tx: TransactionDisplay) {
     }
 }
 
-@Composable
-private fun OnboardingDialog(onConfirm: (String) -> Unit) {
-    var name by remember { mutableStateOf("") }
-    AlertDialog(
-        onDismissRequest = {},
-        title = { Text("Selamat Datang di ChatFin! 👋") },
-        text  = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Mai akan membantumu mengelola keuangan. Mulai dengan memberi nama profilmu.")
-                OutlinedTextField(
-                    value         = name,
-                    onValueChange = { name = it },
-                    label         = { Text("Nama profil (contoh: Keuangan Pribadi)") },
-                    singleLine    = true,
-                    modifier      = Modifier.fillMaxWidth()
-                )
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = { if (name.isNotBlank()) onConfirm(name.trim()) },
-                enabled = name.isNotBlank()
-            ) { Text("Mulai") }
-        }
-    )
-}
+
 
 // ── Charts (sama persis dari AnalyticsScreen) ─────────────────────────────────
 
@@ -828,3 +791,58 @@ private fun MonthlyBarChart(entries: List<MonthlyBarEntry>) {
         )
     }
 }
+
+// ── Sync Status Badge ─────────────────────────────────────────────────────────
+// Ditampilkan di TopAppBar saat status SYNCING atau OFFLINE.
+// IN_SYNC = tidak tampil (tidak mengganggu UI normal).
+@Composable
+fun SyncStatusBadge(status: SyncStatus) {
+    when (status) {
+        SyncStatus.SYNCING -> {
+            Row(
+                modifier = Modifier
+                    .padding(end = 8.dp)
+                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.primaryContainer)
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                CircularProgressIndicator(
+                    modifier  = Modifier.size(10.dp),
+                    color     = MaterialTheme.colorScheme.primary,
+                    strokeWidth = 1.5.dp
+                )
+                Text(
+                    text  = "Menyinkronkan",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+            }
+        }
+        SyncStatus.OFFLINE -> {
+            Row(
+                modifier = Modifier
+                    .padding(end = 8.dp)
+                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.errorContainer)
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Icon(
+                    Icons.Default.CloudOff,
+                    contentDescription = null,
+                    modifier = Modifier.size(10.dp),
+                    tint     = MaterialTheme.colorScheme.onErrorContainer
+                )
+                Text(
+                    text  = "Offline",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onErrorContainer
+                )
+            }
+        }
+        else -> { /* IDLE / IN_SYNC — tidak tampil */ }
+    }
+}

@@ -17,7 +17,7 @@ import com.sndiy.chatfin.core.data.local.entity.*
         ChatMessageEntity::class,
         CategoryKeywordEntity::class,
     ],
-    version = 9,
+    version = 14,
     exportSchema = true
 )
 abstract class ChatFinDatabase : RoomDatabase() {

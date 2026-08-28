@@ -9,6 +9,7 @@ import com.sndiy.chatfin.core.data.local.dao.WalletDao
 import com.sndiy.chatfin.core.data.local.entity.TransactionEntity
 import com.sndiy.chatfin.core.data.local.entity.TransactionItemEntity
 import com.sndiy.chatfin.core.data.local.entity.TransactionWithItems
+import com.sndiy.chatfin.core.data.sync.FirestoreOutboundSync
 import com.sndiy.chatfin.core.domain.BalanceEffect
 import com.sndiy.chatfin.core.domain.WalletDelta
 import com.sndiy.chatfin.core.ocr.ParsedReceiptItem
@@ -24,7 +25,8 @@ import javax.inject.Singleton
 class TransactionRepository @Inject constructor(
     private val db: ChatFinDatabase,
     private val transactionDao: TransactionDao,
-    private val walletDao: WalletDao
+    private val walletDao: WalletDao,
+    private val outboundSync: FirestoreOutboundSync
 ) {
     private val dateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")
     private val timeFormatter = DateTimeFormatter.ofPattern("HH:mm")
@@ -128,6 +130,7 @@ class TransactionRepository @Inject constructor(
         items: List<ParsedReceiptItem> = emptyList()
     ) {
         val txId = UUID.randomUUID().toString()
+        val now = System.currentTimeMillis()
         val transaction = TransactionEntity(
             id                = txId,
             accountId         = accountId,
@@ -139,7 +142,9 @@ class TransactionRepository @Inject constructor(
             note              = note,
             receiptImageUri   = receiptImageUri,
             date              = date.format(dateFormatter),
-            time              = time.format(timeFormatter)
+            time              = time.format(timeFormatter),
+            createdAt         = now,
+            updatedAt         = now
         )
 
         val itemEntities = items.filter { it.name.isNotBlank() }.map { item ->
@@ -159,6 +164,9 @@ class TransactionRepository @Inject constructor(
             }
             applyBalanceEffect(type, walletId, toWalletId, amount)
         }
+
+        // Push real-time ke Firestore (termasuk mutasi saldo dompet)
+        outboundSync.pushTransaction(transaction, itemEntities)
     }
 
     // ── Update transaksi dengan rollback + apply saldo ───────────────────────
@@ -200,6 +208,26 @@ class TransactionRepository @Inject constructor(
         newTime: LocalTime,
         newItems: List<TransactionItemEntity> = emptyList()
     ) {
+        val updated = oldTransaction.copy(
+            type       = newType,
+            amount     = newAmount,
+            categoryId = newCategoryId,
+            walletId   = newWalletId,
+            toWalletId = newToWalletId,
+            note       = newNote,
+            date       = newDate.format(dateFormatter),
+            time       = newTime.format(timeFormatter),
+            updatedAt  = System.currentTimeMillis()
+        )
+
+        val preparedItems = if (newItems.isNotEmpty()) {
+            newItems.filter { it.name.isNotBlank() }.map {
+                if (it.transactionId.isBlank()) it.copy(transactionId = oldTransaction.id) else it
+            }
+        } else {
+            emptyList()
+        }
+
         db.withTransaction {
             rollbackBalanceEffect(
                 oldTransaction.type,
@@ -208,28 +236,24 @@ class TransactionRepository @Inject constructor(
                 oldTransaction.amount
             )
 
-            val updated = oldTransaction.copy(
-                type       = newType,
-                amount     = newAmount,
-                categoryId = newCategoryId,
-                walletId   = newWalletId,
-                toWalletId = newToWalletId,
-                note       = newNote,
-                date       = newDate.format(dateFormatter),
-                time       = newTime.format(timeFormatter)
-            )
             transactionDao.updateTransaction(updated)
 
             // Re-insert items
             transactionDao.deleteTransactionItemsByTransactionId(oldTransaction.id)
-            if (newItems.isNotEmpty()) {
-                val prepared = newItems.filter { it.name.isNotBlank() }.map {
-                    if (it.transactionId.isBlank()) it.copy(transactionId = oldTransaction.id) else it
-                }
-                transactionDao.insertTransactionItems(prepared)
+            if (preparedItems.isNotEmpty()) {
+                transactionDao.insertTransactionItems(preparedItems)
             }
 
             applyBalanceEffect(newType, newWalletId, newToWalletId, newAmount)
+        }
+
+        // Push real-time ke Firestore (termasuk update saldo dompet lama & baru)
+        outboundSync.pushTransaction(updated, preparedItems)
+        if (oldTransaction.walletId != newWalletId) {
+            outboundSync.pushWalletById(oldTransaction.walletId)
+        }
+        if (oldTransaction.toWalletId != null && oldTransaction.toWalletId != newToWalletId) {
+            outboundSync.pushWalletById(oldTransaction.toWalletId)
         }
     }
 
@@ -244,6 +268,9 @@ class TransactionRepository @Inject constructor(
                 transaction.amount
             )
         }
+
+        // Delete di Firestore dan update saldo dompet di cloud
+        outboundSync.deleteTransaction(transaction.id, transaction.walletId, transaction.toWalletId)
     }
 
     private suspend fun applyBalanceEffect(

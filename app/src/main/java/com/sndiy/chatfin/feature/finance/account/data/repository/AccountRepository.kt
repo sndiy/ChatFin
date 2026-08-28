@@ -5,6 +5,7 @@ import com.sndiy.chatfin.core.data.local.dao.WalletDao
 import com.sndiy.chatfin.core.data.local.entity.FinanceAccountEntity
 import com.sndiy.chatfin.core.data.local.entity.WalletEntity
 import com.sndiy.chatfin.core.data.security.SecureStorage
+import com.sndiy.chatfin.core.data.sync.FirestoreOutboundSync
 import kotlinx.coroutines.flow.Flow
 import java.util.UUID
 import javax.inject.Inject
@@ -14,7 +15,8 @@ import javax.inject.Singleton
 class AccountRepository @Inject constructor(
     private val accountDao: AccountDao,
     private val walletDao: WalletDao,
-    private val secureStorage: SecureStorage
+    private val secureStorage: SecureStorage,
+    private val outboundSync: FirestoreOutboundSync
 ) {
     fun getAllAccounts(): Flow<List<FinanceAccountEntity>> =
         accountDao.getAllAccounts()
@@ -33,39 +35,52 @@ class AccountRepository @Inject constructor(
         description: String? = null
     ): String {
         val accountId = UUID.randomUUID().toString()
-        accountDao.insertAccount(
-            FinanceAccountEntity(
-                id          = accountId,
-                name        = name,
-                iconName    = iconName,
-                colorHex    = colorHex,
-                currency    = currency,
-                description = description,
-                isActive    = false
-            )
+        val now = System.currentTimeMillis()
+        val account = FinanceAccountEntity(
+            id          = accountId,
+            name        = name,
+            iconName    = iconName,
+            colorHex    = colorHex,
+            currency    = currency,
+            description = description,
+            isActive    = false,
+            createdAt   = now,
+            updatedAt   = now
         )
-        walletDao.insertWallet(
-            WalletEntity(
-                id        = UUID.randomUUID().toString(),
-                accountId = accountId,
-                name      = "Kas",
-                type      = "CASH",
-                balance   = 0L,
-                currency  = currency,
-                colorHex  = "#1B8A4C",
-                iconName  = "payments",
-                sortOrder = 0
-            )
+        val wallet = WalletEntity(
+            id        = UUID.randomUUID().toString(),
+            accountId = accountId,
+            name      = "Kas",
+            type      = "CASH",
+            balance   = 0L,
+            currency  = currency,
+            colorHex  = "#1B8A4C",
+            iconName  = "payments",
+            sortOrder = 0,
+            createdAt = now,
+            updatedAt = now
         )
-        // Seeding kategori default dilakukan di DatabaseModule.onCreate — tidak perlu di sini
+
+        accountDao.insertAccount(account)
+        walletDao.insertWallet(wallet)
+
+        // Push real-time ke Firestore
+        outboundSync.pushAccount(account)
+        outboundSync.pushWallet(wallet)
+
         return accountId
     }
 
-    suspend fun updateAccount(account: FinanceAccountEntity) =
-        accountDao.updateAccount(account)
+    suspend fun updateAccount(account: FinanceAccountEntity) {
+        val updated = account.copy(updatedAt = System.currentTimeMillis())
+        accountDao.updateAccount(updated)
+        outboundSync.pushAccount(updated)
+    }
 
-    suspend fun deleteAccount(account: FinanceAccountEntity) =
+    suspend fun deleteAccount(account: FinanceAccountEntity) {
         accountDao.deleteAccount(account)
+        outboundSync.deleteAccount(account.id)
+    }
 
     suspend fun switchActiveAccount(accountId: String) {
         accountDao.switchActiveAccount(accountId)

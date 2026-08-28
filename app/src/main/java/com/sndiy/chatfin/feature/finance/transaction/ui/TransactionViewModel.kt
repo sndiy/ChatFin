@@ -12,6 +12,8 @@ import com.sndiy.chatfin.feature.finance.account.data.repository.AccountReposito
 import com.sndiy.chatfin.feature.finance.transaction.data.repository.CategoryRepository
 import com.sndiy.chatfin.feature.finance.transaction.data.repository.TransactionRepository
 import com.sndiy.chatfin.feature.finance.transaction.data.repository.WalletRepository
+import com.sndiy.chatfin.core.data.sync.SyncStatus
+import com.sndiy.chatfin.core.data.sync.SyncStatusRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -68,7 +70,8 @@ data class TransactionListUiState(
     val dateFilter: DateFilter                  = DateFilter(),
     val isLoading: Boolean                      = true,
     val errorMessage: String?                   = null,
-    val successMessage: String?                 = null
+    val successMessage: String?                 = null,
+    val syncStatus: SyncStatus                  = SyncStatus.IDLE
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -77,7 +80,8 @@ class TransactionViewModel @Inject constructor(
     private val transactionRepo: TransactionRepository,
     private val walletRepo: WalletRepository,
     private val categoryRepo: CategoryRepository,
-    private val accountRepo: AccountRepository
+    private val accountRepo: AccountRepository,
+    private val syncStatusRepo: SyncStatusRepository
 ) : ViewModel() {
 
     private val _listState = MutableStateFlow(TransactionListUiState())
@@ -116,6 +120,13 @@ class TransactionViewModel @Inject constructor(
                         )
                     }
                 }
+        }
+
+        // Observe sync status dari RealtimeSyncRepository via SyncStatusRepository
+        viewModelScope.launch {
+            syncStatusRepo.status.collect { status ->
+                _listState.update { it.copy(syncStatus = status) }
+            }
         }
     }
 
@@ -295,6 +306,7 @@ class TransactionViewModel @Inject constructor(
     }
 
     fun deleteTransaction(transaction: TransactionEntity) {
+        if (transaction.isInitialBalance) return // saldo awal tidak boleh dihapus
         viewModelScope.launch {
             try {
                 withContext(Dispatchers.IO) {

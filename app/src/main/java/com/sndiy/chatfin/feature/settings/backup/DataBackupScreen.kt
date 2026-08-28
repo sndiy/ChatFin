@@ -24,7 +24,6 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.sndiy.chatfin.feature.auth.ui.AuthViewModel
-import com.sndiy.chatfin.feature.auth.ui.SyncConfirmType
 import com.sndiy.chatfin.feature.auth.ui.SyncState
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -119,7 +118,7 @@ fun DataBackupScreen(
         ) {
 
             // ── Section: Akun Cloud ───────────────────────────────────────────
-            SectionHeader("Akun & Sinkronisasi Cloud")
+            SectionHeader("Akun Cloud")
 
             if (isLoggedIn) {
                 // Info akun
@@ -145,7 +144,7 @@ fun DataBackupScreen(
                                 fontWeight = FontWeight.SemiBold
                             )
                             Text(
-                                "Akun aktif",
+                                "Sinkronisasi real-time aktif",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer.copy(0.7f)
                             )
@@ -170,26 +169,6 @@ fun DataBackupScreen(
                         }
                     }
                 }
-
-                // Upload & Download cloud
-                DataActionCard(
-                    icon        = Icons.Default.CloudUpload,
-                    title       = "Upload ke Cloud",
-                    subtitle    = "Simpan semua data lokal ke Firebase",
-                    buttonLabel = "Upload Sekarang",
-                    buttonIcon  = Icons.Default.CloudUpload,
-                    enabled     = !isSyncing && !backupState.isLoading,
-                    onClick     = { authViewModel.requestSyncUploadConfirm() }
-                )
-                DataActionCard(
-                    icon        = Icons.Default.CloudDownload,
-                    title       = "Download dari Cloud",
-                    subtitle    = "Pulihkan semua data dari Firebase ke perangkat ini",
-                    buttonLabel = "Download Sekarang",
-                    buttonIcon  = Icons.Default.CloudDownload,
-                    enabled     = !isSyncing && !backupState.isLoading,
-                    onClick     = { authViewModel.requestSyncDownloadConfirm() }
-                )
 
                 // Logout
                 OutlinedButton(
@@ -223,7 +202,7 @@ fun DataBackupScreen(
                         )
                         Text("Belum terhubung ke cloud", style = MaterialTheme.typography.titleSmall)
                         Text(
-                            "Login untuk menyinkronkan data ke Firebase",
+                            "Login untuk mengaktifkan sinkronisasi real-time ke Firebase",
                             style     = MaterialTheme.typography.bodySmall,
                             color     = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -236,20 +215,62 @@ fun DataBackupScreen(
 
             HorizontalDivider()
 
-            // ── Section: Auto Backup (WhatsApp Style) ────────────────────────
-            SectionHeader("Pencadangan Otomatis")
+            // ── Section: Pencadangan Lokal ────────────────────────────────────
+            SectionHeader("Pencadangan Lokal")
 
-            AutoBackupCard(
-                frequency = backupState.autoBackupFrequency,
-                lastBackupTimestamp = backupState.lastBackupTimestamp,
-                isLoading = backupState.isLoading || isSyncing,
-                onFrequencySelected = { backupViewModel.setAutoBackupFrequency(it) },
-                onBackupNow = { backupViewModel.runManualBackupNow() }
-            )
+            // Card cadangkan sekarang (backup ke file JSON + update timestamp)
+            val lastBackupText = if (backupState.lastBackupTimestamp > 0L) {
+                val dt = java.time.LocalDateTime.ofInstant(
+                    java.time.Instant.ofEpochMilli(backupState.lastBackupTimestamp),
+                    java.time.ZoneId.systemDefault()
+                )
+                dt.format(java.time.format.DateTimeFormatter.ofPattern("d MMM yyyy, HH:mm"))
+            } else {
+                "Belum pernah"
+            }
+
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment     = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.Backup, null,
+                            tint     = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(28.dp)
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                "Cadangkan ke Perangkat",
+                                style      = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                "Pencadangan terakhir: $lastBackupText",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    Button(
+                        onClick  = { backupViewModel.runManualBackupNow() },
+                        enabled  = !backupState.isLoading && !isSyncing,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.Save, null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("CADANGKAN SEKARANG")
+                    }
+                }
+            }
 
             HorizontalDivider()
 
-            // ── Section: Backup Lokal ─────────────────────────────────────────
+            // ── Section: Backup File JSON ─────────────────────────────────────
             SectionHeader("Backup Lokal (File JSON)")
 
             Card(
@@ -332,218 +353,6 @@ fun DataBackupScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showLogoutDialog = false }) { Text("Batal") }
-            }
-        )
-    }
-
-    // ── Dialog Konfirmasi: Upload Destruktif ────────────────────────────────
-    if (authState.pendingSyncConfirm is SyncConfirmType.Upload) {
-        val count = authState.syncDataCount
-        AlertDialog(
-            onDismissRequest = { authViewModel.dismissSyncConfirm() },
-            icon  = { Icon(Icons.Default.Warning, null, tint = MaterialTheme.colorScheme.error) },
-            title = { Text("Timpa Data Cloud?", fontWeight = FontWeight.Bold) },
-            text  = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        "Ini akan MENIMPA seluruh data di cloud dengan data di HP ini. " +
-                        "Data cloud yang berbeda akan hilang.",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    if (count != null) {
-                        HorizontalDivider()
-                        Text(
-                            "📱 HP ini: ${count.local} transaksi",
-                            style = MaterialTheme.typography.bodySmall,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Text(
-                            "☁️ Cloud: ${count.cloud} transaksi — akan ditimpa",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error
-                        )
-                    } else {
-                        CircularProgressIndicator(
-                            modifier    = Modifier.size(16.dp),
-                            strokeWidth = 2.dp
-                        )
-                    }
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = { authViewModel.syncUpload() },
-                    colors  = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error,
-                        contentColor   = MaterialTheme.colorScheme.onError
-                    )
-                ) {
-                    Text("Ya, Timpa Data Cloud")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { authViewModel.dismissSyncConfirm() }) {
-                    Text("Batal", fontWeight = FontWeight.SemiBold)
-                }
-            }
-        )
-    }
-
-    // ── Dialog Konfirmasi: Download Destruktif ─────────────────────────────
-    if (authState.pendingSyncConfirm is SyncConfirmType.Download) {
-        val count = authState.syncDataCount
-        AlertDialog(
-            onDismissRequest = { authViewModel.dismissSyncConfirm() },
-            icon  = { Icon(Icons.Default.Warning, null, tint = MaterialTheme.colorScheme.error) },
-            title = { Text("Timpa Data di HP?", fontWeight = FontWeight.Bold) },
-            text  = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        "Ini akan MENIMPA seluruh data di HP ini dengan data dari cloud. " +
-                        "Perubahan lokal yang belum ter-upload akan hilang.",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    if (count != null) {
-                        HorizontalDivider()
-                        Text(
-                            "📱 HP ini: ${count.local} transaksi — akan ditimpa",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error
-                        )
-                        Text(
-                            "☁️ Cloud: ${count.cloud} transaksi",
-                            style = MaterialTheme.typography.bodySmall,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    } else {
-                        CircularProgressIndicator(
-                            modifier    = Modifier.size(16.dp),
-                            strokeWidth = 2.dp
-                        )
-                    }
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = { authViewModel.syncDownload() },
-                    colors  = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error,
-                        contentColor   = MaterialTheme.colorScheme.onError
-                    )
-                ) {
-                    Text("Ya, Timpa Data HP")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { authViewModel.dismissSyncConfirm() }) {
-                    Text("Batal", fontWeight = FontWeight.SemiBold)
-                }
-            }
-        )
-    }
-}
-
-@Composable
-private fun AutoBackupCard(
-    frequency: AutoBackupFrequency,
-    lastBackupTimestamp: Long,
-    isLoading: Boolean,
-    onFrequencySelected: (AutoBackupFrequency) -> Unit,
-    onBackupNow: () -> Unit
-) {
-    var showFrequencyDialog by remember { mutableStateOf(false) }
-
-    val lastBackupText = if (lastBackupTimestamp > 0L) {
-        val dt = java.time.LocalDateTime.ofInstant(
-            java.time.Instant.ofEpochMilli(lastBackupTimestamp),
-            java.time.ZoneId.systemDefault()
-        )
-        dt.format(java.time.format.DateTimeFormatter.ofPattern("d MMM yyyy, HH:mm"))
-    } else {
-        "Belum pernah"
-    }
-
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    Icons.Default.Backup, null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(28.dp)
-                )
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("Cadangkan ke Perangkat & Cloud", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                    Text(
-                        "Pencadangan terakhir: $lastBackupText",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
-            Button(
-                onClick = onBackupNow,
-                enabled = !isLoading,
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-            ) {
-                Icon(Icons.Default.CloudUpload, null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("CADANGKAN SEKARANG")
-            }
-
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column {
-                    Text("Cadangkan ke Penyimpanan", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
-                    Text("Frekuensi: ${frequency.label}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                TextButton(onClick = { showFrequencyDialog = true }) {
-                    Text("Ubah")
-                }
-            }
-        }
-    }
-
-    if (showFrequencyDialog) {
-        AlertDialog(
-            onDismissRequest = { showFrequencyDialog = false },
-            title = { Text("Frekuensi Pencadangan") },
-            text = {
-                Column {
-                    AutoBackupFrequency.entries.forEach { item ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            RadioButton(
-                                selected = (item == frequency),
-                                onClick = {
-                                    onFrequencySelected(item)
-                                    showFrequencyDialog = false
-                                }
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Text(item.label, style = MaterialTheme.typography.bodyLarge)
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { showFrequencyDialog = false }) { Text("Tutup") }
             }
         )
     }

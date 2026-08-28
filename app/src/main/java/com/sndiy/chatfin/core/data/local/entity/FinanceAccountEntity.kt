@@ -18,5 +18,6 @@ data class FinanceAccountEntity(
     val isBiometricEnabled: Boolean = false,
     val isActive: Boolean = false,
     val sortOrder: Int = 0,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis()  // untuk conflict resolution saat sync
 )

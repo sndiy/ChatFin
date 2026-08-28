@@ -21,5 +21,7 @@ data class TransactionEntity(
     val date: String,                   // format: "yyyy-MM-dd"
     val time: String,                   // format: "HH:mm"
     val transferPairId: String? = null,     // link antar transaksi cross-account transfer
-    val createdAt: Long = System.currentTimeMillis()
+    val isInitialBalance: Boolean = false,  // true = transaksi saldo awal wallet
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis()  // untuk conflict resolution saat sync
 )

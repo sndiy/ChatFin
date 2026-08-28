@@ -11,6 +11,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.sndiy.chatfin.core.data.local.entity.WalletEntity
 import com.sndiy.chatfin.core.data.sync.SyncEventBus
+import com.sndiy.chatfin.core.data.sync.SyncStatus
+import com.sndiy.chatfin.core.data.sync.SyncStatusRepository
 import com.sndiy.chatfin.core.domain.LocalInsightEngine
 import com.sndiy.chatfin.core.domain.PeriodRange
 import com.sndiy.chatfin.feature.finance.account.data.repository.AccountRepository
@@ -66,7 +68,9 @@ data class DashboardUiState(
     val budgetOverview: List<BudgetWithSpent>        = emptyList(),
     val hasBudgets: Boolean                          = false,
     // Mai's daily insight
-    val maiInsight: String                           = ""
+    val maiInsight: String                           = "",
+    // Status sinkronisasi Firestore (ditampilkan di TopAppBar)
+    val syncStatus: SyncStatus                       = SyncStatus.IDLE
 )
 
 @HiltViewModel
@@ -76,7 +80,8 @@ class DashboardViewModel @Inject constructor(
     private val transactionRepo: TransactionRepository,
     private val categoryRepo: CategoryRepository,
     private val budgetRepo: BudgetRepository,
-    private val syncEventBus: SyncEventBus
+    private val syncEventBus: SyncEventBus,
+    private val syncStatusRepo: SyncStatusRepository
 ) : ViewModel() {
 
     private val _uiState        = MutableStateFlow(DashboardUiState())
@@ -98,13 +103,31 @@ class DashboardViewModel @Inject constructor(
         analyticsJob?.cancel()
         dashboardJob = observeDashboard()
         analyticsJob = observeAnalytics()
+        observeSyncStatus()
+    }
+
+    private fun observeSyncStatus() {
+        viewModelScope.launch {
+            syncStatusRepo.status.collect { status ->
+                _uiState.update { it.copy(syncStatus = status) }
+            }
+        }
     }
 
     private fun observeSyncEvent() {
         viewModelScope.launch {
             syncEventBus.syncCompleted.collect {
-                android.util.Log.d("DashboardVM", "Sync selesai, restart observers")
-                startObservers()
+                // Flow Room otomatis memancarkan data baru; cukup pastikan ada akun aktif
+                val active = accountRepo.getActiveAccount().first()
+                if (active == null) {
+                    val all = accountRepo.getAllAccounts().first()
+                    if (all.isNotEmpty()) {
+                        val withData = all.find { acc ->
+                            transactionRepo.getTransactionsByAccount(acc.id).first().isNotEmpty()
+                        } ?: all.first()
+                        accountRepo.switchActiveAccount(withData.id)
+                    }
+                }
             }
         }
     }
@@ -120,7 +143,16 @@ class DashboardViewModel @Inject constructor(
         accountRepo.getActiveAccount()
             .flatMapLatest { account ->
                 if (account == null) {
-                    _uiState.update { it.copy(isLoading = false, isOnboarded = false) }
+                    val all = accountRepo.getAllAccounts().first()
+                    if (all.isNotEmpty()) {
+                        val withData = all.find { acc ->
+                            transactionRepo.getTransactionsByAccount(acc.id).first().isNotEmpty()
+                        } ?: all.first()
+                        accountRepo.switchActiveAccount(withData.id)
+                    } else {
+                        // Tidak ada akun sama sekali -> matikan loading agar skeleton tidak macet
+                        _uiState.update { it.copy(isLoading = false, isOnboarded = false) }
+                    }
                     return@flatMapLatest emptyFlow()
                 }
                 _uiState.update { it.copy(isOnboarded = true, accountName = account.name) }

@@ -2,17 +2,16 @@
 
 package com.sndiy.chatfin.feature.onboarding.ui
 
-import androidx.compose.animation.*
 import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.Login
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -22,7 +21,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
@@ -41,30 +39,32 @@ private val pages = listOf(
         iconColor   = Color(0xFF1B8A4C),
         title       = "Catat Keuanganmu",
         subtitle    = "Semua di satu tempat",
-        description = "Kelola pemasukan, pengeluaran, dan dompet digitalmu dengan mudah. Semua tercatat rapi dan otomatis."
+        description = "Kelola pemasukan, pengeluaran, dan dompet dengan mudah. Offline-first, data aman di perangkatmu."
     ),
     OnboardingPage(
         icon        = Icons.Default.AutoAwesome,
         iconColor   = Color(0xFF7E57C2),
-        title       = "Mai, Asisten AI-mu",
+        title       = "Mai, Asisten Finansial",
         subtitle    = "Sakurajima Mai siap membantu",
-        description = "Tanya Mai soal kondisi keuanganmu, minta analisis pengeluaran, atau sekadar ngobrol santai. Mai tahu datamu."
+        description = "Tanya Mai soal kondisi keuanganmu, minta analisis pengeluaran, atau sekadar saran hemat praktis."
     ),
     OnboardingPage(
         icon        = Icons.Default.PieChart,
         iconColor   = Color(0xFF1E88E5),
         title       = "Analitik & Budget",
         subtitle    = "Kontrol penuh keuanganmu",
-        description = "Lihat grafik pengeluaran, atur budget per kategori, dan terima insight otomatis. Keuanganmu jadi transparan."
+        description = "Lihat grafik pengeluaran, atur budget per kategori, dan pantau kesehatan finansialmu setiap bulan."
     )
 )
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun OnboardingScreen(
-    onComplete: (accountName: String, initialBalance: Long) -> Unit
+    onLogin: () -> Unit,
+    onRegister: () -> Unit,
+    onStartOffline: () -> Unit
 ) {
-    val pagerState = rememberPagerState(pageCount = { pages.size + 1 }) // +1 untuk setup page
+    val totalPageCount = pages.size + 1 // 3 intro pages + 1 final action page
+    val pagerState = rememberPagerState(pageCount = { totalPageCount })
     val scope      = rememberCoroutineScope()
 
     Scaffold { padding ->
@@ -81,19 +81,23 @@ fun OnboardingScreen(
                 if (page < pages.size) {
                     OnboardingPageContent(pages[page])
                 } else {
-                    SetupPageContent(onComplete = onComplete)
+                    FinalActionPageContent(
+                        onLogin        = onLogin,
+                        onRegister     = onRegister,
+                        onStartOffline = onStartOffline
+                    )
                 }
             }
 
-            // Bottom: dots + button
+            // Bottom indicator & navigation
             Column(
-                modifier            = Modifier.padding(24.dp),
+                modifier            = Modifier.padding(horizontal = 24.dp, vertical = 16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // Page dots
+                // Page indicator dots
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    repeat(pages.size + 1) { index ->
+                    repeat(totalPageCount) { index ->
                         val isActive = index == pagerState.currentPage
                         val dotWidth by animateDpAsState(
                             targetValue = if (isActive) 24.dp else 8.dp,
@@ -111,26 +115,29 @@ fun OnboardingScreen(
                     }
                 }
 
-                // Button
+                // Nav buttons for intro pages
                 if (pagerState.currentPage < pages.size) {
                     Row(
                         modifier              = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment     = Alignment.CenterVertically
                     ) {
                         if (pagerState.currentPage > 0) {
                             TextButton(onClick = {
                                 scope.launch { pagerState.animateScrollToPage(pagerState.currentPage - 1) }
                             }) { Text("Kembali") }
                         } else {
-                            Spacer(Modifier.width(1.dp))
+                            TextButton(onClick = {
+                                scope.launch { pagerState.animateScrollToPage(pages.size) }
+                            }) { Text("Lewati") }
                         }
 
                         Button(onClick = {
                             scope.launch { pagerState.animateScrollToPage(pagerState.currentPage + 1) }
                         }) {
-                            Text(if (pagerState.currentPage == pages.size - 1) "Mulai Setup" else "Lanjut")
+                            Text(if (pagerState.currentPage == pages.size - 1) "Mulai" else "Lanjut")
                             Spacer(Modifier.width(4.dp))
-                            Icon(Icons.Default.ArrowForward, null, Modifier.size(18.dp))
+                            Icon(Icons.AutoMirrored.Filled.ArrowForward, null, Modifier.size(18.dp))
                         }
                     }
                 }
@@ -190,93 +197,91 @@ private fun OnboardingPageContent(page: OnboardingPage) {
 }
 
 @Composable
-private fun SetupPageContent(
-    onComplete: (accountName: String, initialBalance: Long) -> Unit
+private fun FinalActionPageContent(
+    onLogin: () -> Unit,
+    onRegister: () -> Unit,
+    onStartOffline: () -> Unit
 ) {
-    var accountName    by remember { mutableStateOf("Keuangan Pribadi") }
-    var initialBalance by remember { mutableStateOf("") }
-    var walletName     by remember { mutableStateOf("Kas") }
-
     Column(
-        modifier            = Modifier.fillMaxSize().padding(32.dp),
+        modifier            = Modifier.fillMaxSize().padding(horizontal = 28.dp, vertical = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Icon(
-            Icons.Default.RocketLaunch, null,
-            modifier = Modifier.size(48.dp),
-            tint     = MaterialTheme.colorScheme.primary
-        )
+        Box(
+            modifier         = Modifier
+                .size(88.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primaryContainer),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                Icons.Default.CloudSync, null,
+                modifier = Modifier.size(44.dp),
+                tint     = MaterialTheme.colorScheme.primary
+            )
+        }
 
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(20.dp))
 
         Text(
-            "Satu langkah lagi!",
+            "Selamat Datang di ChatFin",
             style      = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold,
             textAlign  = TextAlign.Center
         )
 
-        Spacer(Modifier.height(4.dp))
+        Spacer(Modifier.height(6.dp))
 
         Text(
-            "Setup profil keuanganmu",
+            "Pilih cara memulai: masuk dengan email untuk sinkronisasi otomatis, buat akun baru, atau pakai langsung secara offline.",
             style     = MaterialTheme.typography.bodyMedium,
             color     = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center
         )
 
-        Spacer(Modifier.height(32.dp))
+        Spacer(Modifier.height(28.dp))
 
-        OutlinedTextField(
-            value         = accountName,
-            onValueChange = { accountName = it },
-            label         = { Text("Nama Profil") },
-            placeholder   = { Text("Contoh: Keuangan Pribadi") },
-            leadingIcon   = { Icon(Icons.Default.Person, null) },
-            singleLine    = true,
-            modifier      = Modifier.fillMaxWidth()
-        )
+        // Opsi 1: Masuk dengan Email (Login)
+        Button(
+            onClick  = onLogin,
+            modifier = Modifier.fillMaxWidth().height(48.dp)
+        ) {
+            Icon(Icons.AutoMirrored.Filled.Login, null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Masuk dengan Email", fontWeight = FontWeight.SemiBold)
+        }
 
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(10.dp))
 
-        OutlinedTextField(
-            value           = initialBalance,
-            onValueChange   = { initialBalance = it.filter { c -> c.isDigit() } },
-            label           = { Text("Saldo Awal (opsional)") },
-            placeholder     = { Text("0") },
-            prefix          = { Text("Rp ") },
-            leadingIcon     = { Icon(Icons.Default.AccountBalanceWallet, null) },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-            singleLine      = true,
-            modifier        = Modifier.fillMaxWidth()
-        )
+        // Opsi 2: Daftar Akun Baru (Registrasi)
+        FilledTonalButton(
+            onClick  = onRegister,
+            modifier = Modifier.fillMaxWidth().height(48.dp)
+        ) {
+            Icon(Icons.Default.PersonAdd, null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Daftar Akun Baru", fontWeight = FontWeight.SemiBold)
+        }
 
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(10.dp))
+
+        // Opsi 3: Mulai Tanpa Akun (Offline)
+        OutlinedButton(
+            onClick  = onStartOffline,
+            modifier = Modifier.fillMaxWidth().height(48.dp)
+        ) {
+            Icon(Icons.Default.PlayArrow, null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Mulai Tanpa Akun (Offline)", fontWeight = FontWeight.SemiBold)
+        }
+
+        Spacer(Modifier.height(16.dp))
 
         Text(
-            "Saldo awal dompet \"Kas\" kamu. Bisa diubah nanti.",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            "Semua data dan profil keuangan bisa diatur kapan saja di menu Pengaturan.",
+            style     = MaterialTheme.typography.labelSmall,
+            color     = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center
         )
-
-        Spacer(Modifier.height(24.dp))
-
-        Button(
-            onClick  = {
-                if (accountName.isNotBlank()) {
-                    onComplete(
-                        accountName.trim(),
-                        initialBalance.toLongOrNull() ?: 0L
-                    )
-                }
-            },
-            enabled  = accountName.isNotBlank(),
-            modifier = Modifier.fillMaxWidth().height(52.dp)
-        ) {
-            Icon(Icons.Default.Check, null)
-            Spacer(Modifier.width(8.dp))
-            Text("Mulai Pakai ChatFin", fontWeight = FontWeight.SemiBold)
-        }
     }
 }

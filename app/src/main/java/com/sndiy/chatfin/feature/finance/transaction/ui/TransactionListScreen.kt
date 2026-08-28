@@ -47,6 +47,7 @@ import androidx.compose.foundation.clickable
 import com.sndiy.chatfin.core.ui.component.NumpadAmountDisplay
 import com.sndiy.chatfin.core.ui.component.NumpadKeyboard
 import com.sndiy.chatfin.core.ui.component.NumpadPresetChips
+import com.sndiy.chatfin.feature.finance.dashboard.ui.SyncStatusBadge
 
 private enum class TxFilter(val label: String) {
     ALL("Semua"), INCOME("Pemasukan"), EXPENSE("Pengeluaran")
@@ -138,6 +139,7 @@ fun TransactionListScreen(
                     title = { Text("Riwayat", fontWeight = FontWeight.Bold) },
 
                     actions = {
+                        SyncStatusBadge(listState.syncStatus)
                         // Tombol filter tanggal — berwarna kalau aktif
                         IconButton(onClick = { showDateFilter = true }) {
                             Icon(
@@ -1388,11 +1390,13 @@ private fun TransactionItem(
                             leadingIcon = { Icon(Icons.Default.Edit, null) },
                             onClick     = { showMenu = false; onEdit() }
                         )
-                        DropdownMenuItem(
-                            text        = { Text("Hapus", color = MaterialTheme.colorScheme.error) },
-                            leadingIcon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) },
-                            onClick     = { showMenu = false; onDelete() }
-                        )
+                        if (!transaction.isInitialBalance) {
+                            DropdownMenuItem(
+                                text        = { Text("Hapus", color = MaterialTheme.colorScheme.error) },
+                                leadingIcon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) },
+                                onClick     = { showMenu = false; onDelete() }
+                            )
+                        }
                     }
                 }
             }

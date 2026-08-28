@@ -28,6 +28,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.sndiy.chatfin.feature.chat.ui.ChatScreen
 import com.sndiy.chatfin.feature.auth.ui.AuthScreen
+import com.sndiy.chatfin.feature.auth.ui.AuthViewModel
 import com.sndiy.chatfin.feature.finance.account.ui.AccountFormScreen
 import com.sndiy.chatfin.feature.finance.account.ui.AccountListScreen
 import com.sndiy.chatfin.feature.finance.budget.ui.BudgetScreen
@@ -152,9 +153,17 @@ fun ChatFinNavGraph(
                 val onboardingVM: OnboardingViewModel = hiltViewModel()
                 val isComplete by onboardingVM.isComplete.collectAsStateWithLifecycle()
                 LaunchedEffect(isComplete) {
-                    if (isComplete) navController.navigate(Screen.Dashboard.route) { popUpTo(Screen.Onboarding.route) { inclusive = true } }
+                    if (isComplete) {
+                        navController.navigate(Screen.Dashboard.route) {
+                            popUpTo(Screen.Onboarding.route) { inclusive = true }
+                        }
+                    }
                 }
-                OnboardingScreen(onComplete = { name, balance -> onboardingVM.setupAccount(name, balance) })
+                OnboardingScreen(
+                    onLogin        = { navController.navigate(Screen.Auth.createRoute(isRegister = false)) },
+                    onRegister     = { navController.navigate(Screen.Auth.createRoute(isRegister = true)) },
+                    onStartOffline = { onboardingVM.startOffline() }
+                )
             }
 
             // ── Bottom Nav tabs ───────────────────────────────────────────────
@@ -225,8 +234,38 @@ fun ChatFinNavGraph(
             composable(Screen.SettingsAbout.route)   { AboutScreen(onNavigateBack = { navController.popBackStack() }) }
             composable(Screen.SettingsApiKey.route)  { ApiKeyScreen(onNavigateBack = { navController.popBackStack() }) }
             composable(Screen.SettingsPersona.route) { PersonaScreen(onNavigateBack = { navController.popBackStack() }) }
-            composable(Screen.SettingsBackup.route)  { DataBackupScreen(onNavigateBack = { navController.popBackStack() }, onNavigateToAuth = { navController.navigate(Screen.Auth.route) }, onLoggedOut = { navController.popBackStack() }) }
-            composable(Screen.Auth.route)            { AuthScreen(onAuthSuccess = { navController.popBackStack() }, onSkip = { navController.popBackStack() }) }
+            composable(Screen.SettingsBackup.route)  { DataBackupScreen(onNavigateBack = { navController.popBackStack() }, onNavigateToAuth = { navController.navigate(Screen.Auth.createRoute(isRegister = false)) }, onLoggedOut = { navController.popBackStack() }) }
+            composable(
+                route = Screen.Auth.route,
+                arguments = listOf(navArgument("isRegister") {
+                    type = NavType.BoolType
+                    defaultValue = false
+                })
+            ) { backStackEntry ->
+                val isRegister = backStackEntry.arguments?.getBoolean("isRegister") ?: false
+                val authVM: AuthViewModel = hiltViewModel()
+                LaunchedEffect(isRegister) {
+                    authVM.setRegisterMode(isRegister)
+                }
+                AuthScreen(
+                    onAuthSuccess = {
+                        navController.navigate(Screen.Dashboard.route) {
+                            popUpTo(Screen.Splash.route) { inclusive = true }
+                            popUpTo(Screen.Onboarding.route) { inclusive = true }
+                            popUpTo(Screen.Auth.route) { inclusive = true }
+                        }
+                    },
+                    onSkip = {
+                        authVM.startOffline()
+                        navController.navigate(Screen.Dashboard.route) {
+                            popUpTo(Screen.Splash.route) { inclusive = true }
+                            popUpTo(Screen.Onboarding.route) { inclusive = true }
+                            popUpTo(Screen.Auth.route) { inclusive = true }
+                        }
+                    },
+                    viewModel = authVM
+                )
+            }
         }
     }
 

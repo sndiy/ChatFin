@@ -6,7 +6,9 @@ sealed class Screen(val route: String) {
 
     data object Splash     : Screen("splash")
     data object Onboarding : Screen("onboarding")
-    data object Auth       : Screen("auth")
+    data object Auth       : Screen("auth?isRegister={isRegister}") {
+        fun createRoute(isRegister: Boolean = false) = "auth?isRegister=$isRegister"
+    }
 
     data object Dashboard      : Screen("dashboard")
     data object Chat           : Screen("chat")
