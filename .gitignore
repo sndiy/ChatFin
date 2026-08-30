@@ -1,17 +1,152 @@
-*.iml
-.gradle
-/local.properties
-/.idea/caches
-/.idea/libraries
-/.idea/modules.xml
-/.idea/workspace.xml
-/.idea/navEditor.xml
-/.idea/assetWizardSettings.xml
-.DS_Store
-/build
-/release
-/captures
-.externalNativeBuild
-.cxx
+# ====================================================================
+# Built Artifacts & Outputs
+# ====================================================================
+build/
+**/build/
+bin/
+out/
+target/
+release/
+**/release/
+captures/
+**/captures/
+
+# Android package & compiled files
+*.apk
+*.aab
+*.ap_
+*.dex
+*.class
+
+# C/C++ & Native build outputs
+.externalNativeBuild/
+.cxx/
+*.so
+*.o
+*.a
+
+# Profiler & Heap dumps
+*.hprof
+*.prof
+*.dump
+
+# ====================================================================
+# Gradle & Kotlin Caches
+# ====================================================================
+.gradle/
+.kotlin/
+.konan/
+kotlin-js-store/
+gradle-app.setting
+
+# Ensure Gradle Wrapper is preserved
+!gradle/wrapper/gradle-wrapper.jar
+!gradle/wrapper/gradle-wrapper.properties
+
+# ====================================================================
+# Sensitive Files, Keystores & Configuration Secrets
+# ====================================================================
+# Local SDK and environment properties
 local.properties
+**/local.properties
+
+# Firebase / Cloud service configurations
 google-services.json
+**/google-services.json
+GoogleService-Info.plist
+**/GoogleService-Info.plist
+
+# Signing keystores and private keys
+*.jks
+*.keystore
+*.key
+*.pem
+*.p12
+*.pk8
+*.pepk
+*.signing
+
+# Properties files containing sensitive keys/credentials
+secrets.properties
+**/secrets.properties
+secure.properties
+**/secure.properties
+api-keys.properties
+**/api-keys.properties
+key.properties
+**/key.properties
+
+# Environment variable files
+.env
+.env.*
+*.env
+
+# ====================================================================
+# IDE & Editor Configurations
+# ====================================================================
+# IntelliJ IDEA / Android Studio
+*.iml
+**/*.iml
+*.ipr
+*.iws
+.idea/workspace.xml
+.idea/caches/
+.idea/libraries/
+.idea/modules.xml
+.idea/navEditor.xml
+.idea/assetWizardSettings.xml
+.idea/shelf/
+.idea/tasks.xml
+.idea/usage.statistics.xml
+.idea/dictionaries/
+.idea/sonarlint/
+.idea/dataSources/
+.idea/dataSources.local.xml
+.idea/sqlDataSources.xml
+.idea/dynamic.xml
+.idea/replState.xml
+.idea/project_keystore.xml
+
+# Visual Studio Code & Fleet
+.vscode/
+.fleet/
+*.code-workspace
+
+# ====================================================================
+# OS & System Files
+# ====================================================================
+# macOS
+.DS_Store
+**/.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+
+# Windows
+Thumbs.db
+ehthumbs.db
+ehthumbs_vista.db
+desktop.ini
+[Nn]et[Hh]ood
+[Tt]argets
+
+# Linux / Editor swap files
+*~
+*.swp
+*.swo
+.directory
+
+# ====================================================================
+# Logs & Temporary Files
+# ====================================================================
+*.log
+hs_err_pid*
+replay_pid*
+*.tmp
+*.bak
+
+# ====================================================================
+# Explicit Whitelist / Exceptions
+# ====================================================================
+# Room database migration schemas must be tracked (AGENTS.md Rule 7)
+!**/schemas/**

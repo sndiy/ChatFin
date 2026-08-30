@@ -4,20 +4,29 @@ agp                         = "8.9.0"
 kotlin                      = "2.1.10"
 ksp                         = "2.1.10-1.0.31"
 
-# Compose
+# Compose (Android BOM)
 composeBom                  = "2026.06.01"
 activityCompose             = "1.10.1"
 navigationCompose           = "2.8.9"
 
+# Compose Multiplatform
+composeMp                   = "1.7.3"
+
 # Lifecycle & ViewModel
 lifecycle                   = "2.8.7"
 
-# Hilt (DI)
+# Hilt (DI) — hanya di :app sampai migrasi Koin selesai
 hilt                        = "2.55"
 hiltNavigationCompose       = "1.2.0"
 
+# Koin (DI — KMP-ready, menggantikan Hilt di :shared)
+koin                        = "4.0.2"
+
 # Room (Local DB)
-room                        = "2.7.0"
+room                        = "2.7.2"
+
+# SQLite Bundled — untuk Desktop Room
+sqliteBundled               = "2.5.0-alpha14"
 
 # DataStore
 datastore                   = "1.1.3"
@@ -25,15 +34,19 @@ datastore                   = "1.1.3"
 # Security
 securityCrypto              = "1.1.0-alpha06"
 
-# Firebase
-firebaseBom                 = "34.10.0"
+# Firebase (Android SDK — dipakai :app & androidMain)
+firebaseBom                 = "33.10.0"
 
-# Networking (panggilan REST langsung ke Gemini API — SDK com.google.ai.client.generativeai
-# sudah deprecated Google, lihat GeminiClient.kt untuk konteks migrasi)
+# Firebase KMP (GitLive SDK — dipakai desktopMain via :shared)
+gitliveFirebase             = "2.1.0"
+
+# Networking
 okhttp                       = "5.4.0"
 
 # Charts
 vico                        = "2.1.2"
+# Vico 3.x untuk :shared (KMP-native, dipakai di Fase 2)
+vico3                       = "3.3.0"
 
 # Kotlin Coroutines
 coroutines                  = "1.10.1"
@@ -82,11 +95,18 @@ hilt-android                = { group = "com.google.dagger", name = "hilt-androi
 hilt-android-compiler       = { group = "com.google.dagger", name = "hilt-android-compiler", version.ref = "hilt" }
 hilt-navigation-compose     = { group = "androidx.hilt", name = "hilt-navigation-compose", version.ref = "hiltNavigationCompose" }
 
+# Koin (Multiplatform DI)
+koin-core                   = { group = "io.insert-koin", name = "koin-core", version.ref = "koin" }
+koin-compose                = { group = "io.insert-koin", name = "koin-compose", version.ref = "koin" }
+koin-compose-viewmodel      = { group = "io.insert-koin", name = "koin-compose-viewmodel", version.ref = "koin" }
+koin-android                = { group = "io.insert-koin", name = "koin-android", version.ref = "koin" }
+
 # Room
 room-runtime                = { group = "androidx.room", name = "room-runtime", version.ref = "room" }
 room-ktx                    = { group = "androidx.room", name = "room-ktx", version.ref = "room" }
 room-compiler               = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
 room-testing                = { group = "androidx.room", name = "room-testing", version.ref = "room" }
+sqlite-bundled              = { group = "androidx.sqlite", name = "sqlite-bundled", version.ref = "sqliteBundled" }
 
 # DataStore
 datastore-preferences       = { group = "androidx.datastore", name = "datastore-preferences", version.ref = "datastore" }
@@ -94,13 +114,15 @@ datastore-preferences       = { group = "androidx.datastore", name = "datastore-
 # Security
 security-crypto             = { group = "androidx.security", name = "security-crypto", version.ref = "securityCrypto" }
 
-# Firebase
-# Catatan: sejak Firebase BOM ~25.12, artefak "-ktx" jadi tombstone tanpa versi
-# (ekstensi Kotlin sudah menyatu ke artefak dasar). Firebase BOM 34.x menegaskan
-# ini — pakai firebase-firestore / firebase-auth, bukan varian -ktx.
+# Firebase (Android SDK)
 firebase-bom                = { group = "com.google.firebase", name = "firebase-bom", version.ref = "firebaseBom" }
 firebase-firestore          = { group = "com.google.firebase", name = "firebase-firestore" }
 firebase-auth               = { group = "com.google.firebase", name = "firebase-auth" }
+
+# Firebase KMP (GitLive)
+gitlive-firebase-firestore  = { group = "dev.gitlive", name = "firebase-firestore", version.ref = "gitliveFirebase" }
+gitlive-firebase-auth       = { group = "dev.gitlive", name = "firebase-auth", version.ref = "gitliveFirebase" }
+gitlive-firebase-common     = { group = "dev.gitlive", name = "firebase-common", version.ref = "gitliveFirebase" }
 
 # Networking
 okhttp                       = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
@@ -109,7 +131,9 @@ okhttp                       = { group = "com.squareup.okhttp3", name = "okhttp"
 vico-compose                = { group = "com.patrykandpatrick.vico", name = "compose-m3", version.ref = "vico" }
 
 # Coroutines
+coroutines-core             = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-core", version.ref = "coroutines" }
 coroutines-android          = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
+coroutines-swing            = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-swing", version.ref = "coroutines" }
 
 # WorkManager
 work-runtime-ktx            = { group = "androidx.work", name = "work-runtime-ktx", version.ref = "workManager" }
@@ -141,9 +165,12 @@ mockk-android               = { group = "io.mockk", name = "mockk-android", vers
 android-application         = { id = "com.android.application", version.ref = "agp" }
 android-library             = { id = "com.android.library", version.ref = "agp" }
 kotlin-android              = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+kotlin-multiplatform        = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
 kotlin-compose              = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 kotlin-serialization        = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 kotlin-parcelize            = { id = "org.jetbrains.kotlin.plugin.parcelize", version.ref = "kotlin" }
 hilt                        = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }
 ksp                         = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 google-services             = { id = "com.google.gms.google-services", version = "4.4.2" }
+compose-multiplatform       = { id = "org.jetbrains.compose", version.ref = "composeMp" }
+room                        = { id = "androidx.room", version.ref = "room" }

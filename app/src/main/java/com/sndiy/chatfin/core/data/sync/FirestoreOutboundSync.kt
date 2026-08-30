@@ -31,15 +31,15 @@ class FirestoreOutboundSync @Inject constructor(
     private val firestore: FirebaseFirestore,
     private val authRepo: AuthRepository,
     private val walletDao: WalletDao
-) {
+) : OutboundSync {
     private fun col(uid: String, name: String) =
         firestore.collection("users").document(uid).collection(name)
 
     // ── Transaksi ────────────────────────────────────────────────────────────
 
-    suspend fun pushTransaction(
+    override suspend fun pushTransaction(
         tx: TransactionEntity,
-        items: List<TransactionItemEntity> = emptyList()
+        items: List<TransactionItemEntity>
     ) = withContext(Dispatchers.IO) {
         val uid = authRepo.currentUser?.uid ?: return@withContext
         try {
@@ -52,10 +52,10 @@ class FirestoreOutboundSync @Inject constructor(
         }
     }
 
-    suspend fun deleteTransaction(
+    override suspend fun deleteTransaction(
         txId: String,
-        walletId: String? = null,
-        toWalletId: String? = null
+        walletId: String?,
+        toWalletId: String?
     ) = withContext(Dispatchers.IO) {
         val uid = authRepo.currentUser?.uid ?: return@withContext
         try {
@@ -69,7 +69,7 @@ class FirestoreOutboundSync @Inject constructor(
 
     // ── Dompet (Wallet) ──────────────────────────────────────────────────────
 
-    suspend fun pushWallet(wallet: WalletEntity) = withContext(Dispatchers.IO) {
+    override suspend fun pushWallet(wallet: WalletEntity) = withContext(Dispatchers.IO) {
         val uid = authRepo.currentUser?.uid ?: return@withContext
         try {
             col(uid, "wallets").document(wallet.id).set(wallet.toMap()).await()
@@ -78,7 +78,7 @@ class FirestoreOutboundSync @Inject constructor(
         }
     }
 
-    suspend fun pushWalletById(walletId: String) = withContext(Dispatchers.IO) {
+    override suspend fun pushWalletById(walletId: String) = withContext(Dispatchers.IO) {
         try {
             val wallet = walletDao.getWalletById(walletId) ?: return@withContext
             pushWallet(wallet)
@@ -87,7 +87,7 @@ class FirestoreOutboundSync @Inject constructor(
         }
     }
 
-    suspend fun deleteWallet(walletId: String) = withContext(Dispatchers.IO) {
+    override suspend fun deleteWallet(walletId: String) = withContext(Dispatchers.IO) {
         val uid = authRepo.currentUser?.uid ?: return@withContext
         try {
             col(uid, "wallets").document(walletId).delete().await()
@@ -98,7 +98,7 @@ class FirestoreOutboundSync @Inject constructor(
 
     // ── Kategori ─────────────────────────────────────────────────────────────
 
-    suspend fun pushCategory(category: CategoryEntity) = withContext(Dispatchers.IO) {
+    override suspend fun pushCategory(category: CategoryEntity) = withContext(Dispatchers.IO) {
         val uid = authRepo.currentUser?.uid ?: return@withContext
         try {
             col(uid, "categories").document(category.id).set(category.toMap()).await()
@@ -107,7 +107,7 @@ class FirestoreOutboundSync @Inject constructor(
         }
     }
 
-    suspend fun deleteCategory(categoryId: String) = withContext(Dispatchers.IO) {
+    override suspend fun deleteCategory(categoryId: String) = withContext(Dispatchers.IO) {
         val uid = authRepo.currentUser?.uid ?: return@withContext
         try {
             col(uid, "categories").document(categoryId).delete().await()
@@ -118,7 +118,7 @@ class FirestoreOutboundSync @Inject constructor(
 
     // ── Akun Finansial ───────────────────────────────────────────────────────
 
-    suspend fun pushAccount(account: FinanceAccountEntity) = withContext(Dispatchers.IO) {
+    override suspend fun pushAccount(account: FinanceAccountEntity) = withContext(Dispatchers.IO) {
         val uid = authRepo.currentUser?.uid ?: return@withContext
         try {
             col(uid, "accounts").document(account.id).set(account.toMap()).await()
@@ -127,7 +127,7 @@ class FirestoreOutboundSync @Inject constructor(
         }
     }
 
-    suspend fun deleteAccount(accountId: String) = withContext(Dispatchers.IO) {
+    override suspend fun deleteAccount(accountId: String) = withContext(Dispatchers.IO) {
         val uid = authRepo.currentUser?.uid ?: return@withContext
         try {
             col(uid, "accounts").document(accountId).delete().await()
@@ -138,7 +138,7 @@ class FirestoreOutboundSync @Inject constructor(
 
     // ── Budget ───────────────────────────────────────────────────────────────
 
-    suspend fun pushBudget(budget: BudgetEntity) = withContext(Dispatchers.IO) {
+    override suspend fun pushBudget(budget: BudgetEntity) = withContext(Dispatchers.IO) {
         val uid = authRepo.currentUser?.uid ?: return@withContext
         try {
             col(uid, "budgets").document(budget.id).set(budget.toMap()).await()
@@ -147,7 +147,7 @@ class FirestoreOutboundSync @Inject constructor(
         }
     }
 
-    suspend fun deleteBudget(budgetId: String) = withContext(Dispatchers.IO) {
+    override suspend fun deleteBudget(budgetId: String) = withContext(Dispatchers.IO) {
         val uid = authRepo.currentUser?.uid ?: return@withContext
         try {
             col(uid, "budgets").document(budgetId).delete().await()

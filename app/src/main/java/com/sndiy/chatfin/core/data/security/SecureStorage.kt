@@ -11,9 +11,9 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
-class SecureStorage @Inject constructor(
+class AppSecureStorage @Inject constructor(
     @ApplicationContext private val context: Context
-) {
+) : SecureStorage {
     // by lazy menunda operasi Keystore (MasterKey) dan file I/O
     // (EncryptedSharedPreferences.create) sampai benar-benar dibutuhkan,
     // bukan saat Hilt membangun object graph.
@@ -35,22 +35,22 @@ class SecureStorage @Inject constructor(
 
     // API di-suspend + withContext(IO) karena mengakses Keystore/EncryptedSharedPreferences
     // adalah operasi disk/kripto, bukan operasi memori — tidak boleh berjalan di Main thread.
-    suspend fun getGeminiApiKey(): String? = withContext(Dispatchers.IO) {
+    override suspend fun getGeminiApiKey(): String? = withContext(Dispatchers.IO) {
         prefs.getString(KEY_GEMINI_API, null)
     }
 
-    suspend fun setGeminiApiKey(value: String?) = withContext(Dispatchers.IO) {
+    override suspend fun setGeminiApiKey(value: String?) = withContext(Dispatchers.IO) {
         prefs.edit().apply {
             if (value.isNullOrBlank()) remove(KEY_GEMINI_API)
             else putString(KEY_GEMINI_API, value)
         }.apply()
     }
 
-    suspend fun getActiveAccountId(): String? = withContext(Dispatchers.IO) {
+    override suspend fun getActiveAccountId(): String? = withContext(Dispatchers.IO) {
         prefs.getString(KEY_ACTIVE_ACCOUNT, null)
     }
 
-    suspend fun setActiveAccountId(value: String?) = withContext(Dispatchers.IO) {
+    override suspend fun setActiveAccountId(value: String?) = withContext(Dispatchers.IO) {
         prefs.edit().apply {
             if (value.isNullOrBlank()) remove(KEY_ACTIVE_ACCOUNT)
             else putString(KEY_ACTIVE_ACCOUNT, value)

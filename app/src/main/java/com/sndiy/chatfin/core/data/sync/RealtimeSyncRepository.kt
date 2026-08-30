@@ -299,6 +299,7 @@ class RealtimeSyncRepository @Inject constructor(
 
     private suspend fun processWalletChanges(changes: List<DocumentChange>) {
         if (changes.isEmpty()) return
+        var hasStructuralChange = false
 
         db.withTransaction {
             for (change in changes) {
@@ -308,17 +309,35 @@ class RealtimeSyncRepository @Inject constructor(
                     DocumentChange.Type.MODIFIED -> {
                         val cloud = doc.toWallet() ?: continue
                         val local = walletDao.getWalletById(cloud.id)
-                        if (local == null || cloud.updatedAt >= local.updatedAt) {
-                            walletDao.insertWallet(cloud)
+                        when {
+                            local == null -> {
+                                // Wallet baru dari cloud: insert dengan balance cloud sebagai titik awal
+                                // (akan direkonsiliasi recomputeWalletBalances)
+                                walletDao.insertWallet(cloud)
+                                hasStructuralChange = true
+                            }
+                            cloud.updatedAt > local.updatedAt -> {
+                                // Update metadata (nama, warna, tipe, dll) tapi JANGAN timpa balance lokal.
+                                // Balance truth-of-record ada di transaksi, bukan di cloud.balance.
+                                walletDao.insertWallet(cloud.copy(balance = local.balance))
+                                hasStructuralChange = true
+                            }
+                            // cloud.updatedAt <= local.updatedAt → lokal lebih baru, skip
                         }
                     }
                     DocumentChange.Type.REMOVED -> {
                         val local = walletDao.getWalletById(doc.id)
-                        if (local != null) walletDao.deleteWallet(local)
+                        if (local != null) {
+                            walletDao.deleteWallet(local)
+                            hasStructuralChange = true
+                        }
                     }
                 }
             }
         }
+
+        // Rekonsiliasi saldo setelah ada perubahan struktural wallet
+        if (hasStructuralChange) recomputeWalletBalances()
     }
 
     private suspend fun processCategoryChanges(changes: List<DocumentChange>) {

@@ -25,3 +25,5 @@ dependencyResolutionManagement {
 
 rootProject.name = "ChatFin"
 include(":app")
+include(":shared")
+include(":desktopApp")

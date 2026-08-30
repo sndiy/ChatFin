@@ -43,6 +43,9 @@ class AppSyncOrchestrator @Inject constructor(
     // Job yang bereaksi ke auth state
     private var authJob: Job? = null
 
+    // Guard: cegah restart listener jika UID sama (Firebase Auth sering re-emit)
+    private var lastStartedUid: String? = null
+
     /**
      * Dipanggil dari ChatFinApp.onCreate() dengan applicationScope.
      * Mulai bereaksi ke perubahan auth state.
@@ -53,10 +56,17 @@ class AppSyncOrchestrator @Inject constructor(
         authJob = scope.launch {
             authRepo.authState.collect { user ->
                 if (user != null) {
+                    if (user.uid == lastStartedUid) {
+                        // UID sama — Firebase Auth re-emit (restore session), tidak perlu restart
+                        Log.d(TAG, "Auth re-emit for same uid=${user.uid}, skipping restart")
+                        return@collect
+                    }
                     Log.d(TAG, "User logged in (${user.uid}), starting listeners and initial sync")
+                    lastStartedUid = user.uid
                     startListeners(user.uid)
                 } else {
                     Log.d(TAG, "User logged out, stopping listeners")
+                    lastStartedUid = null
                     stopListeners()
                     syncStatusRepo.update(SyncStatus.IDLE)
                 }

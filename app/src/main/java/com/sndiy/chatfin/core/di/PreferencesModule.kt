@@ -3,6 +3,7 @@
 package com.sndiy.chatfin.core.di
 
 import android.content.Context
+import com.sndiy.chatfin.core.data.security.AppSecureStorage
 import com.sndiy.chatfin.core.data.security.SecureStorage
 import dagger.Module
 import dagger.Provides
@@ -27,5 +28,5 @@ object PreferencesModule {
     @Singleton
     fun provideSecureStorage(
         @ApplicationContext context: Context
-    ): SecureStorage = SecureStorage(context)
+    ): SecureStorage = AppSecureStorage(context)
 }

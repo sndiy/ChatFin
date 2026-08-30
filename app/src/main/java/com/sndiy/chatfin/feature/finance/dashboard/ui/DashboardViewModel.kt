@@ -92,6 +92,7 @@ class DashboardViewModel @Inject constructor(
 
     private var dashboardJob: Job? = null
     private var analyticsJob: Job? = null
+    private var syncStatusJob: Job? = null
 
     init {
         startObservers()
@@ -101,16 +102,15 @@ class DashboardViewModel @Inject constructor(
     private fun startObservers() {
         dashboardJob?.cancel()
         analyticsJob?.cancel()
-        dashboardJob = observeDashboard()
-        analyticsJob = observeAnalytics()
-        observeSyncStatus()
+        syncStatusJob?.cancel()
+        dashboardJob   = observeDashboard()
+        analyticsJob   = observeAnalytics()
+        syncStatusJob  = observeSyncStatus()
     }
 
-    private fun observeSyncStatus() {
-        viewModelScope.launch {
-            syncStatusRepo.status.collect { status ->
-                _uiState.update { it.copy(syncStatus = status) }
-            }
+    private fun observeSyncStatus(): Job = viewModelScope.launch {
+        syncStatusRepo.status.collect { status ->
+            _uiState.update { it.copy(syncStatus = status) }
         }
     }
 

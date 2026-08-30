@@ -7,8 +7,10 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.sndiy.chatfin.core.data.local.ChatFinDatabase
 import com.sndiy.chatfin.core.data.local.DefaultCategories
+import com.sndiy.chatfin.core.data.local.dao.*
 import com.sndiy.chatfin.core.data.local.entity.CategoryKeywordEntity
 import com.sndiy.chatfin.core.parser.DefaultKeywords
+import com.sndiy.chatfin.core.parser.RoomKeywordSource
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import dagger.Module
@@ -383,4 +385,6 @@ object DatabaseModule {
     @Provides fun provideBudgetDao(db: ChatFinDatabase)          = db.budgetDao()
     @Provides fun provideChatDao(db: ChatFinDatabase)            = db.chatDao()
     @Provides fun provideCategoryKeywordDao(db: ChatFinDatabase) = db.categoryKeywordDao()
+    @Provides fun provideRoomKeywordSource(dao: CategoryKeywordDao): com.sndiy.chatfin.core.parser.RoomKeywordSource = com.sndiy.chatfin.core.parser.RoomKeywordSource(dao)
+    @Provides fun provideOutboundSync(impl: com.sndiy.chatfin.core.data.sync.FirestoreOutboundSync): com.sndiy.chatfin.core.data.sync.OutboundSync = impl
 }

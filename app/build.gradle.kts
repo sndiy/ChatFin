@@ -86,6 +86,7 @@ android {
 }
 
 dependencies {
+    implementation(project(":shared"))
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 
     val composeBom = platform(libs.compose.bom)
