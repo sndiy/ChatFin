@@ -123,6 +123,12 @@ interface TransactionDao {
     // Hapus transaksi berdasarkan ID
     @Query("DELETE FROM transactions WHERE id = :id")
     suspend fun deleteTransactionById(id: String)
+
+    @Query("DELETE FROM transaction_items")
+    suspend fun deleteAllTransactionItems()
+
+    @Query("DELETE FROM transactions")
+    suspend fun deleteAllTransactions()
 }
 
 // Data class bantu untuk query total per hari

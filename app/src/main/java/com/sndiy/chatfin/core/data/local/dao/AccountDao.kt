@@ -40,4 +40,7 @@ interface AccountDao {
     // Set satu akun jadi aktif dan lainnya nonaktif dalam satu operasi SQL atomik
     @Query("UPDATE finance_accounts SET isActive = (CASE WHEN id = :id THEN 1 ELSE 0 END)")
     suspend fun switchActiveAccount(id: String)
+
+    @Query("DELETE FROM finance_accounts")
+    suspend fun deleteAllAccounts()
 }

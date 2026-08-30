@@ -4,11 +4,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
+import com.sndiy.chatfin.core.data.security.DesktopFirebaseInitializer
+import com.sndiy.chatfin.core.data.security.DesktopSecureStorage
 import com.sndiy.chatfin.core.di.initKoin
 import org.koin.core.context.GlobalContext
 
 fun main() {
-    // Initialize Koin DI if not already started
+    // 1. Inisialisasi Firebase JVM & Storage Bridge (Fail-safe, aman jika offline)
+    DesktopFirebaseInitializer.initialize(DesktopSecureStorage())
+
+    // 2. Initialize Koin DI if not already started
     if (GlobalContext.getOrNull() == null) {
         initKoin()
     }

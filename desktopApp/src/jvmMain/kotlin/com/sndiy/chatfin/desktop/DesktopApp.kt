@@ -39,6 +39,14 @@ import org.koin.compose.koinInject
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
+import com.sndiy.chatfin.core.data.auth.DesktopAuthRepository
+import com.sndiy.chatfin.core.data.auth.AuthUser
+import com.sndiy.chatfin.core.data.sync.DesktopSyncOrchestrator
+import com.sndiy.chatfin.core.data.sync.SyncStats
+import com.sndiy.chatfin.core.data.sync.SyncStatus
+import com.sndiy.chatfin.core.data.sync.SyncStatusRepository
+import com.sndiy.chatfin.desktop.ui.AuthDialog
+
 enum class DesktopNavTab(val label: String) {
     DASHBOARD("Dashboard"),
     TRANSACTIONS("Transaksi"),
@@ -53,20 +61,35 @@ fun DesktopApp() {
     val transactionRepo: TransactionRepository = koinInject()
     val budgetRepo: BudgetRepository = koinInject()
     val categoryRepo: CategoryRepository = koinInject()
+    val authRepo: DesktopAuthRepository = koinInject()
+    val syncStatusRepo: SyncStatusRepository = koinInject()
+    val syncOrchestrator: DesktopSyncOrchestrator = koinInject()
 
     val coroutineScope = rememberCoroutineScope()
     var selectedTab by remember { mutableStateOf(DesktopNavTab.DASHBOARD) }
 
+    // Start background sync orchestrator
+    LaunchedEffect(Unit) {
+        syncOrchestrator.start(this)
+    }
+
+    // Auth & Sync State
+    val authUser by authRepo.authState.collectAsState(initial = authRepo.currentUser)
+    val syncStatus by syncStatusRepo.status.collectAsState()
+    val lastActivationStats by syncOrchestrator.lastActivationStats.collectAsState()
+    var showAuthDialog by remember { mutableStateOf(false) }
+    var showLogoutConfirmDialog by remember { mutableStateOf(false) }
+
     // Account & Data State
     val accounts by accountRepo.getAllAccounts().collectAsState(initial = emptyList())
-    var activeAccount by remember { mutableStateOf<FinanceAccountEntity?>(null) }
+    val activeAccount = remember(accounts) {
+        accounts.find { it.isActive } ?: accounts.firstOrNull()
+    }
 
     LaunchedEffect(accounts) {
         if (accounts.isEmpty()) {
             val id = accountRepo.createAccount("Pribadi")
             accountRepo.switchActiveAccount(id)
-        } else {
-            activeAccount = accounts.find { it.isActive } ?: accounts.firstOrNull()
         }
     }
 
@@ -96,7 +119,7 @@ fun DesktopApp() {
                     containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
                     header = {
                         Column(
-                            modifier = Modifier.padding(vertical = 24.dp, horizontal = 16.dp),
+                            modifier = Modifier.padding(vertical = 20.dp, horizontal = 16.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             Box(
@@ -113,7 +136,7 @@ fun DesktopApp() {
                                     modifier = Modifier.size(26.dp)
                                 )
                             }
-                            Spacer(modifier = Modifier.height(10.dp))
+                            Spacer(modifier = Modifier.height(8.dp))
                             Text(
                                 text = "ChatFin",
                                 style = MaterialTheme.typography.titleLarge,
@@ -125,6 +148,80 @@ fun DesktopApp() {
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
+
+                            // ── Account Selector Dropdown ─────────────────────────
+                            if (accounts.isNotEmpty()) {
+                                var accountMenuExpanded by remember { mutableStateOf(false) }
+                                Spacer(modifier = Modifier.height(10.dp))
+                                Box {
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = MaterialTheme.colorScheme.surface,
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .clickable { accountMenuExpanded = true }
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Person,
+                                                contentDescription = "Akun",
+                                                modifier = Modifier.size(16.dp),
+                                                tint = MaiPurple
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(
+                                                text = activeAccount?.name ?: "Pilih Akun",
+                                                style = MaterialTheme.typography.labelMedium,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Icon(
+                                                imageVector = Icons.Default.ArrowDropDown,
+                                                contentDescription = "Pilih Akun",
+                                                modifier = Modifier.size(16.dp),
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+
+                                    DropdownMenu(
+                                        expanded = accountMenuExpanded,
+                                        onDismissRequest = { accountMenuExpanded = false }
+                                    ) {
+                                        accounts.forEach { acc ->
+                                            DropdownMenuItem(
+                                                text = {
+                                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                                        Text(
+                                                            text = acc.name,
+                                                            fontWeight = if (acc.id == accountId) FontWeight.Bold else FontWeight.Normal
+                                                        )
+                                                        if (acc.id == accountId) {
+                                                            Spacer(modifier = Modifier.width(8.dp))
+                                                            Icon(
+                                                                imageVector = Icons.Default.Check,
+                                                                contentDescription = "Aktif",
+                                                                modifier = Modifier.size(16.dp),
+                                                                tint = MaiPurple
+                                                            )
+                                                        }
+                                                    }
+                                                },
+                                                onClick = {
+                                                    coroutineScope.launch {
+                                                        accountRepo.switchActiveAccount(acc.id)
+                                                    }
+                                                    accountMenuExpanded = false
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 ) {
@@ -152,6 +249,71 @@ fun DesktopApp() {
                             )
                         )
                     }
+
+                    Spacer(modifier = Modifier.weight(1f))
+
+                    // ── Profile & Sync Status Widget ─────────────────────────
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable {
+                                if (authUser == null) showAuthDialog = true
+                            },
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(8.dp)
+                                        .clip(CircleShape)
+                                        .background(
+                                            when (syncStatus) {
+                                                SyncStatus.IN_SYNC -> Color(0xFF2E7D32)
+                                                SyncStatus.SYNCING -> Color(0xFFF57C00)
+                                                SyncStatus.OFFLINE -> Color(0xFF757575)
+                                                SyncStatus.IDLE    -> Color(0xFF9E9E9E)
+                                            }
+                                        )
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = when (syncStatus) {
+                                        SyncStatus.IN_SYNC -> "Tersinkron"
+                                        SyncStatus.SYNCING -> "Menyinkronkan..."
+                                        SyncStatus.OFFLINE -> "Offline"
+                                        SyncStatus.IDLE    -> "Mode Offline"
+                                    },
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = authUser?.email ?: "Klik untuk Login",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1
+                            )
+                            if (authUser != null) {
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    text = "Keluar (Logout)",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.error,
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier.clickable {
+                                        showLogoutConfirmDialog = true
+                                    }
+                                )
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
                 }
 
                 VerticalDivider(thickness = 1.dp, color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
@@ -228,6 +390,90 @@ fun DesktopApp() {
                                 iconName = "account_balance_wallet"
                             )
                             showAddWalletDialog = false
+                        }
+                    }
+                )
+            }
+
+            // ── Dialog Autentikasi Cloud ─────────────────────────────────────
+            if (showAuthDialog) {
+                AuthDialog(
+                    authRepo = authRepo,
+                    onDismiss = { showAuthDialog = false },
+                    onSuccess = { showAuthDialog = false }
+                )
+            }
+
+            // ── Dialog Konfirmasi Logout & Pembersihan Data Lokal ────────────
+            if (showLogoutConfirmDialog) {
+                AlertDialog(
+                    onDismissRequest = { showLogoutConfirmDialog = false },
+                    title = { Text("Keluar dari Akun?", fontWeight = FontWeight.Bold) },
+                    text = {
+                        Text("Data keuangan di perangkat ini akan dibersihkan demi keamanan dan privasi. Seluruh data kamu tetap tersimpan aman di cloud dan akan otomatis tersinkronkan kembali saat kamu masuk.")
+                    },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                coroutineScope.launch {
+                                    authRepo.logout()
+                                    showLogoutConfirmDialog = false
+                                }
+                            }
+                        ) {
+                            Text("Keluar & Bersihkan Data Lokal", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showLogoutConfirmDialog = false }) {
+                            Text("Batal")
+                        }
+                    }
+                )
+            }
+
+            // ── Dialog Ringkasan Hasil Sync Pertama (First-Activation Audit) ─
+            lastActivationStats?.let { stats ->
+                AlertDialog(
+                    onDismissRequest = { syncOrchestrator.dismissActivationStats() },
+                    title = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.CloudDone,
+                                contentDescription = null,
+                                tint = Color(0xFF2E7D32),
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Sinkronisasi Selesai", fontWeight = FontWeight.Bold)
+                        }
+                    },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(
+                                text = "Data cloud dan lokal berhasil disinkronkan:",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text("• Diunduh dari Cloud: ${stats.totalDownloaded} data (${stats.downloadedTransactions} transaksi, ${stats.downloadedWallets} dompet)")
+                            Text("• Diunggah ke Cloud: ${stats.totalUploaded} data")
+                            if (stats.reconciledWallets > 0) {
+                                Text("• Dompet Direkonsiliasi: ${stats.reconciledWallets} dompet")
+                            }
+                            if (stats.skippedCorruptedRecords > 0) {
+                                Text(
+                                    text = "• Data Rusak Di-skip: ${stats.skippedCorruptedRecords} data (nominal tidak valid)",
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        Button(
+                            onClick = { syncOrchestrator.dismissActivationStats() },
+                            colors = ButtonDefaults.buttonColors(containerColor = MaiPurple)
+                        ) {
+                            Text("Mengerti")
                         }
                     }
                 )

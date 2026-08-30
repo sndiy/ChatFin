@@ -340,15 +340,15 @@ fun DataBackupScreen(
     if (showLogoutDialog) {
         AlertDialog(
             onDismissRequest = { showLogoutDialog = false },
-            title   = { Text("Keluar?") },
-            text    = { Text("Data lokal tetap tersimpan. Kamu bisa login kembali kapan saja.") },
+            title   = { Text("Keluar dari Akun?", fontWeight = FontWeight.Bold) },
+            text    = { Text("Data keuangan di perangkat ini akan dibersihkan demi keamanan dan privasi. Seluruh data kamu tetap tersimpan aman di cloud dan akan otomatis sinkron kembali saat kamu login.") },
             confirmButton = {
                 TextButton(onClick = {
                     authViewModel.logout()
                     showLogoutDialog = false
                     onLoggedOut()
                 }) {
-                    Text("Keluar", color = MaterialTheme.colorScheme.error)
+                    Text("Keluar & Bersihkan", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {

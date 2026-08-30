@@ -57,4 +57,7 @@ interface BudgetDao {
     // Hapus budget
     @Delete
     suspend fun deleteBudget(budget: BudgetEntity)
+
+    @Query("DELETE FROM budgets")
+    suspend fun deleteAllBudgets()
 }

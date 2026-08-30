@@ -8,6 +8,8 @@ import com.sndiy.chatfin.core.data.local.dao.TransactionDao
 import com.sndiy.chatfin.core.data.local.dao.WalletDao
 import com.sndiy.chatfin.core.data.security.SecureStorage
 import com.sndiy.chatfin.core.data.sync.OutboundSync
+import com.sndiy.chatfin.core.data.sync.SyncEventBus
+import com.sndiy.chatfin.core.data.sync.SyncStatusRepository
 import com.sndiy.chatfin.feature.finance.account.data.repository.AccountRepository
 import com.sndiy.chatfin.feature.finance.budget.data.repository.BudgetRepository
 import com.sndiy.chatfin.feature.finance.transaction.data.repository.CategoryRepository
@@ -22,6 +24,14 @@ import javax.inject.Singleton
 @Module
 @InstallIn(SingletonComponent::class)
 object RepositoryModule {
+
+    @Provides
+    @Singleton
+    fun provideSyncStatusRepository(): SyncStatusRepository = SyncStatusRepository()
+
+    @Provides
+    @Singleton
+    fun provideSyncEventBus(): SyncEventBus = SyncEventBus()
 
     @Provides
     @Singleton

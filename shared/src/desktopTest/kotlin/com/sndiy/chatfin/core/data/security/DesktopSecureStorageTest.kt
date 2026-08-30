@@ -132,12 +132,48 @@ class DesktopSecureStorageTest {
         val vaultFile = File(tempDir, "secure_vault.enc")
         assertTrue(vaultFile.exists())
 
-        // Rusak file vault secara sengaja
+        // Rusak file vault secara sengaja di disk
         vaultFile.writeBytes(byteArrayOf(0x00, 0x01, 0x02, 0x03, 0x04))
 
-        // SecureStorage harus menangani dengan aman (return null, tanpa crash)
-        val result = storage.getGeminiApiKey()
-        assertNull(result, "File vault yang rusak harus ditangani secara aman dengan return null")
+        // Instance baru yang membaca berkas korup dari disk harus menangani dengan aman (return null, tanpa crash)
+        val newStorage = DesktopSecureStorage(baseDir = tempDir)
+        val result = newStorage.getGeminiApiKey()
+        assertNull(result, "File vault yang rusak di disk harus ditangani secara aman dengan return null")
+    }
+
+    @Test
+    fun testSelectiveClearPreservesGeminiKey() = runTest {
+        val geminiKey = "AIzaSyGeminiApiKeySecret123"
+        storage.setGeminiApiKey(geminiKey)
+
+        val platform = DesktopFirebasePlatform(storage)
+        com.google.firebase.FirebasePlatform.initializeFirebasePlatform(platform)
+
+        platform.store("firebase_auth_token", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.token123")
+        platform.store("firebase_user_uid", "user_12345")
+
+        assertEquals("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.token123", platform.retrieve("firebase_auth_token"))
+        assertEquals("user_12345", platform.retrieve("firebase_user_uid"))
+        assertEquals(geminiKey, storage.getGeminiApiKey(), "Gemini API key harus tetap ada saat auth tersimpan")
+
+        // Simulasi Logout: Menghapus token auth dan user UID secara selektif
+        platform.clear("firebase_auth_token")
+        platform.clear("firebase_user_uid")
+
+        assertNull(platform.retrieve("firebase_auth_token"), "Auth token harus terhapus")
+        assertNull(platform.retrieve("firebase_user_uid"), "User UID harus terhapus")
+
+        // VERIFIKASI KRITIS: Gemini API key HARUS TETAP ADA setelah logout
+        val remainingGeminiKey = storage.getGeminiApiKey()
+        assertEquals(
+            geminiKey,
+            remainingGeminiKey,
+            "API key Gemini HARUS TETAP UTUH di secure_vault.enc setelah user logout dari Firebase!"
+        )
+
+        // Verifikasi persistensi setelah instance baru membaca disk
+        val newStorage = DesktopSecureStorage(baseDir = tempDir)
+        assertEquals(geminiKey, newStorage.getGeminiApiKey(), "Instance baru harus tetap membaca Gemini API key")
     }
 
     @Test

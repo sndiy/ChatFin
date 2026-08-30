@@ -181,8 +181,10 @@ class AuthViewModel @Inject constructor(
     }
 
     fun logout() {
-        authRepo.logout()
-        _uiState.update { it.copy(currentUser = null, authState = AuthState.Idle, isSyncComplete = false) }
+        viewModelScope.launch {
+            authRepo.logout()
+            _uiState.update { it.copy(currentUser = null, authState = AuthState.Idle, isSyncComplete = false) }
+        }
     }
 
     // ── Manual sync: Smart Bi-directional Sync (Upload + Merge Download) ─────

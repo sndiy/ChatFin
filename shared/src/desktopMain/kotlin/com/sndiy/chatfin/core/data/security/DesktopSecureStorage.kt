@@ -1,8 +1,6 @@
 package com.sndiy.chatfin.core.data.security
 
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -34,7 +32,7 @@ class DesktopSecureStorage(
     private val baseDir: File = File(System.getProperty("user.home"), ".chatfin")
 ) : SecureStorage {
 
-    private val mutex = Mutex()
+    private val lock = Any()
     private val secureRandom = SecureRandom()
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -45,6 +43,9 @@ class DesktopSecureStorage(
     @Volatile
     private var cachedKey: SecretKey? = null
 
+    @Volatile
+    private var memoryCache: Map<String, String>? = null
+
     init {
         if (!baseDir.exists()) {
             baseDir.mkdirs()
@@ -52,40 +53,56 @@ class DesktopSecureStorage(
         }
     }
 
-    override suspend fun getGeminiApiKey(): String? = withContext(Dispatchers.IO) {
-        mutex.withLock {
-            readEntries()[KEY_GEMINI_API]
+    // ── Synchronous Thread-Safe API (untuk FirebasePlatform / JVM delegates) ─
+
+    fun getSync(key: String): String? = synchronized(lock) {
+        ensureLoaded()
+        memoryCache?.get(key)
+    }
+
+    fun setSync(key: String, value: String?) = synchronized(lock) {
+        ensureLoaded()
+        val entries = memoryCache.orEmpty().toMutableMap()
+        if (value.isNullOrBlank()) {
+            entries.remove(key)
+        } else {
+            entries[key] = value
         }
+        memoryCache = entries
+        writeEntries(entries)
+    }
+
+    fun removeSync(key: String) = synchronized(lock) {
+        ensureLoaded()
+        val entries = memoryCache.orEmpty().toMutableMap()
+        if (entries.remove(key) != null) {
+            memoryCache = entries
+            writeEntries(entries)
+        }
+    }
+
+    private fun ensureLoaded() {
+        if (memoryCache == null) {
+            memoryCache = readEntries()
+        }
+    }
+
+    // ── SecureStorage Suspend API (untuk Domain & ViewModels) ─────────────────
+
+    override suspend fun getGeminiApiKey(): String? = withContext(Dispatchers.IO) {
+        getSync(KEY_GEMINI_API)
     }
 
     override suspend fun setGeminiApiKey(value: String?) = withContext(Dispatchers.IO) {
-        mutex.withLock {
-            val entries = readEntries().toMutableMap()
-            if (value.isNullOrBlank()) {
-                entries.remove(KEY_GEMINI_API)
-            } else {
-                entries[KEY_GEMINI_API] = value
-            }
-            writeEntries(entries)
-        }
+        setSync(KEY_GEMINI_API, value)
     }
 
     override suspend fun getActiveAccountId(): String? = withContext(Dispatchers.IO) {
-        mutex.withLock {
-            readEntries()[KEY_ACTIVE_ACCOUNT]
-        }
+        getSync(KEY_ACTIVE_ACCOUNT)
     }
 
     override suspend fun setActiveAccountId(value: String?) = withContext(Dispatchers.IO) {
-        mutex.withLock {
-            val entries = readEntries().toMutableMap()
-            if (value.isNullOrBlank()) {
-                entries.remove(KEY_ACTIVE_ACCOUNT)
-            } else {
-                entries[KEY_ACTIVE_ACCOUNT] = value
-            }
-            writeEntries(entries)
-        }
+        setSync(KEY_ACTIVE_ACCOUNT, value)
     }
 
     // ── Internal Crypto Operations ───────────────────────────────────────────

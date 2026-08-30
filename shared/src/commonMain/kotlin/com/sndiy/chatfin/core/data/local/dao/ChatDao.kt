@@ -82,4 +82,10 @@ interface ChatDao {
         deleteMessagesBySession(session.id)
         deleteSession(session)
     }
+
+    @Query("DELETE FROM chat_messages")
+    suspend fun deleteAllChatMessages()
+
+    @Query("DELETE FROM chat_sessions")
+    suspend fun deleteAllChatSessions()
 }
